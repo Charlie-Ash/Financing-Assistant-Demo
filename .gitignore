@@ -2,6 +2,11 @@
 .venv/
 venv/
 
+# Per-agent local settings (real secrets/overrides) -- .env.example files
+# (the committed, documented templates) are unaffected since this pattern
+# matches the exact filename ".env" only.
+.env
+
 # Pycaches
 __pycache__/
 .__pycache__/

@@ -49,6 +49,7 @@ A2ASystem/
 │   ├── orchestrator/              # the Orchestrator agent (A2A client)
 │   │   ├── orchestrator.py       # session/thread lifecycle, run_orchestrator()
 │   │   ├── config.py             # REMOTE_AGENTS list, checkpoint DB path
+│   │   ├── .env.example          # copy to .env in this folder to override defaults (see Configuration)
 │   │   ├── memory_manager.py     # chat_log.md + thread_id.txt file I/O
 │   │   ├── agents/
 │   │   │   ├── remote_agent.py   # A2A client: discover + call remote agents
@@ -67,10 +68,12 @@ A2ASystem/
 │       ├── defaultTool/          # trivial in-process fallback tool
 │       ├── ragTool/              # standalone RAG A2A agent (own process)
 │       │   ├── config.py
+│       │   ├── .env.example      # copy to .env in this folder to override defaults (see Configuration)
 │       │   ├── rag/              # dataIngestion, userQuery, graph, state, tool_class
 │       │   └── a2a/              # a2a_server.py, agent_executor.py
 │       └── actionsTool/          # standalone Actions A2A agent (own process)
 │           ├── config.py
+│           ├── .env.example      # copy to .env in this folder to override defaults (see Configuration)
 │           ├── actions/          # noteWriter, note_schema, graph, state, tool_class
 │           └── a2a/              # a2a_server.py, agent_executor.py
 └── tests/
@@ -94,9 +97,9 @@ Each phase keeps the same underlying scenario (route a user request, answer from
 ## Environment & requirements
 
 - **Python**: developed against Python 3.14.
-- **GPU**: an NVIDIA CUDA-capable GPU is required — every agent runs its own vLLM engine. Developed and evaluated on a single consumer GPU (RTX 5090, ~32 GiB VRAM). Running all three engines concurrently is VRAM-tight; each agent's `*_GPU_MEMORY_UTILIZATION` env var (see below) controls how much of the card it reserves, and `src/tools/gpu_utils.py` performs a pre-flight check before loading a model. If you're VRAM-constrained, don't run all three servers at once — start only the agents you need for a given session.
+- **GPU**: an NVIDIA CUDA-capable GPU is required — every agent runs its own vLLM engine. Developed and evaluated on a single consumer GPU (RTX 5090, ~32 GiB VRAM). Running all three engines concurrently is VRAM-tight; each agent's `*_GPU_MEMORY_UTILIZATION` setting (see [Configuration](#configuration)) controls how much of the card it reserves, and `src/tools/gpu_utils.py` performs a pre-flight check before loading a model. If you're VRAM-constrained, don't run all three servers at once — start only the agents you need for a given session.
 - **Models used by default**: orchestrator `google/gemma-4-E4B-it`, RAG `google/gemma-4-E2B-it-qat-w4a16-ct` (quantized), Actions `google/gemma-3-1b-it`.
-- **Key dependencies** (see `requirements.txt`): `vllm`, `langgraph` + `langgraph-checkpoint-sqlite`, `langchain-core`, `a2a-sdk[http-server]`, `uvicorn`, `llama-index` + `qdrant-client` (RAG), `pymupdf`, `sentence-transformers`, `pytest` + `pytest-asyncio`.
+- **Key dependencies** (see `requirements.txt`): `vllm`, `langgraph` + `langgraph-checkpoint-sqlite`, `langchain-core`, `a2a-sdk[http-server]`, `uvicorn`, `llama-index` + `qdrant-client` (RAG), `pymupdf`, `sentence-transformers`, `pydantic-settings` (per-agent config, see [Configuration](#configuration)), `pytest` + `pytest-asyncio`.
 
 ## Setup
 
@@ -112,6 +115,49 @@ pip install -r requirements.txt
 # CUDA-enabled torch is installed separately (see requirements.txt):
 pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu128
 ```
+
+Everything above gets the code and dependencies installed with sensible defaults already built in — you don't strictly need to touch any config to run the project. See [Configuration](#configuration) below if you want to change a model, a port, a VRAM budget, or anything else.
+
+## Configuration
+
+Each of the three agents (Orchestrator, RAG, Actions) reads its own settings independently, in this order of priority: **a real OS environment variable** you've exported, then **that agent's own `.env` file**, then **the built-in default** baked into its `config.py`. You never have to set anything for the project to run — the built-in defaults are what's been used throughout development — but if you want to change a model, a port, or a GPU memory budget, a `.env` file is the easiest way.
+
+**How to set one up:** each agent ships a `.env.example` right next to its `config.py`, listing every setting it accepts with its default already filled in (just commented out). Copy it to `.env` **in that same folder**, then uncomment and edit only the lines you actually want to change:
+
+```bash
+# do this for whichever agent(s) you want to customize — none are required
+cp src/orchestrator/.env.example src/orchestrator/.env
+cp src/tools/ragTool/.env.example src/tools/ragTool/.env
+cp src/tools/actionsTool/.env.example src/tools/actionsTool/.env
+```
+
+A few things worth knowing:
+- **Each agent has its own `.env`, not one shared file.** This matches how they actually run — three independent processes — so RAG's `.env` has no effect on the orchestrator or Actions, and vice versa.
+- **`.env` files are never committed.** They're covered by `.gitignore`; only the `.env.example` templates are checked in. If you put a real API key or path in a `.env`, it stays local to your machine.
+- **A bad value fails immediately, not mysteriously later.** Every setting is type- and range-checked at process startup (e.g. a GPU memory fraction must be between 0 and 1, a port must be a valid port number). If you typo a value, you'll get a clear error naming the exact setting and the exact problem the moment you try to run that agent — not a confusing crash from inside vLLM several seconds in.
+- **A real environment variable always wins** over anything in `.env`, which always wins over the built-in default — so you can still do a one-off override (e.g. `RAG_A2A_PORT=8005 python -m tools.ragTool.a2a.a2a_server`) without touching any file.
+
+**Every available setting**, grouped by which agent's `.env` it belongs in:
+
+| Agent | Variable | Default | Purpose |
+|---|---|---|---|
+| Orchestrator | `REMOTE_AGENTS` | `rag@http://localhost:8001,actions@http://localhost:8002` | Which A2A agents the orchestrator discovers, as `name@url` pairs |
+| Orchestrator | `REMOTE_AGENTS_VERBATIM` | `rag` | Which agents' successful results are relayed to the user as-is instead of composed into a reply |
+| Orchestrator | `CHECKPOINT_DB_PATH` | `data/checkpoints/checkpoints.db` | Where the persistent LangGraph checkpointer writes conversation state |
+| Orchestrator | `REMOTE_AGENT_TIMEOUT_SECONDS` | `180` | How long the orchestrator waits for a remote agent's A2A response before giving up |
+| Orchestrator | `ORCHESTRATOR_LLM_MODEL` | `google/gemma-4-E4B-it` | The orchestrator's own vLLM model |
+| Orchestrator | `ORCHESTRATOR_GPU_MEMORY_UTILIZATION` | `0.6` | Fraction of VRAM reserved for the orchestrator's vLLM engine |
+| Orchestrator | `ORCHESTRATOR_MAX_MODEL_LEN` | `4096` | Max context window (tokens) the orchestrator's engine allocates KV cache for |
+| RAG | `RAG_EMBEDDING_MODEL` | `BAAI/bge-m3` | Embedding model used to index and search documents |
+| RAG | `RAG_COLLECTION_NAME` | `my_docs` | Qdrant collection name for the vector index |
+| RAG | `RAG_LLM_MODEL` | `google/gemma-4-E2B-it-qat-w4a16-ct` | RAG's own vLLM model (grounded answer generation) |
+| RAG | `RAG_GPU_MEMORY_UTILIZATION` | `0.3` | Fraction of VRAM reserved for the RAG agent's vLLM engine |
+| RAG | `RAG_MAX_MODEL_LEN` | `4096` | Max context window (tokens) RAG's engine allocates KV cache for |
+| RAG | `RAG_A2A_HOST` / `RAG_A2A_PORT` | `0.0.0.0` / `8001` | RAG agent server bind address |
+| Actions | `ACTIONS_LLM_MODEL` | `google/gemma-3-1b-it` | Actions' own vLLM model (note content generation) |
+| Actions | `ACTIONS_GPU_MEMORY_UTILIZATION` | `0.1` | Fraction of VRAM reserved for the Actions agent's vLLM engine |
+| Actions | `ACTIONS_MAX_MODEL_LEN` | `2048` | Max context window (tokens) Actions' engine allocates KV cache for |
+| Actions | `ACTIONS_A2A_HOST` / `ACTIONS_A2A_PORT` | `0.0.0.0` / `8002` | Actions agent server bind address |
 
 ## Running the project
 
@@ -133,18 +179,7 @@ python main.py
 
 Type `bye` in the orchestrator REPL to exit (you'll be asked whether to save a summarized memory of the session).
 
-Useful environment variables:
-
-| Variable | Default | Purpose |
-|---|---|---|
-| `REMOTE_AGENTS` | `rag@http://localhost:8001,actions@http://localhost:8002` | Which A2A agents the orchestrator discovers, as `name@url` pairs |
-| `REMOTE_AGENTS_VERBATIM` | `rag` | Which agents' successful results are relayed to the user as-is instead of composed into a reply |
-| `CHECKPOINT_DB_PATH` | `data/checkpoints/checkpoints.db` | Where the persistent LangGraph checkpointer writes conversation state |
-| `ORCHESTRATOR_GPU_MEMORY_UTILIZATION` | `0.6` | Fraction of VRAM reserved for the orchestrator's vLLM engine |
-| `RAG_GPU_MEMORY_UTILIZATION` | `0.3` | Fraction of VRAM reserved for the RAG agent's vLLM engine |
-| `ACTIONS_GPU_MEMORY_UTILIZATION` | `0.1` | Fraction of VRAM reserved for the Actions agent's vLLM engine |
-| `RAG_A2A_HOST` / `RAG_A2A_PORT` | `0.0.0.0` / `8001` | RAG agent server bind address |
-| `ACTIONS_A2A_HOST` / `ACTIONS_A2A_PORT` | `0.0.0.0` / `8002` | Actions agent server bind address |
+Want to change a model, a port, or a GPU memory budget first? See [Configuration](#configuration) above.
 
 ## Testing
 

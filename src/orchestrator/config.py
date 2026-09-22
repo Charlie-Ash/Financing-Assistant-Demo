@@ -1,10 +1,16 @@
 # Orchestrator-side config: which remote A2A agents to discover at startup,
-# and how each one's results should be relayed. Same os.environ.get(...)
-# convention already used in tools/ragTool/config.py / tools/actionsTool/config.py.
+# how each one's results should be relayed, and this process's own vLLM
+# engine settings. Backed by pydantic-settings (env vars, then this agent's
+# own .env file, then the field default below) instead of raw os.environ.get,
+# so a bad value is rejected at startup instead of surfacing later -- see
+# OrchestratorSettings below. Same pattern used in tools/ragTool/config.py /
+# tools/actionsTool/config.py.
 
-import os
 from dataclasses import dataclass
 from pathlib import Path
+
+from pydantic import Field
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 @dataclass
@@ -54,33 +60,58 @@ def _parse_remote_agents(raw: str, verbatim_raw: str) -> list[RemoteAgentConfig]
     return agents
 
 
-REMOTE_AGENTS = _parse_remote_agents(
-    os.environ.get("REMOTE_AGENTS", _DEFAULT_REMOTE_AGENTS),
-    os.environ.get("REMOTE_AGENTS_VERBATIM", _DEFAULT_REMOTE_AGENTS_VERBATIM),
-)
-
-
-# Where the persistent LangGraph checkpointer (AsyncSqliteSaver, see
-# orchestrator.py) writes conversation state, so it survives an orchestrator
-# process restart -- unlike the in-RAM MemorySaver it replaces. Same
-# data/-directory convention as memory_manager.py's CHAT_LOG_DIR, computed
+# Same data/-directory convention as memory_manager.py's CHAT_LOG_DIR, computed
 # independently here rather than imported from there (this module has no
 # other dependency on memory_manager.py, and both files already compute
 # their own AGENTSYSTEM_ROOT the same way).
 _CONFIG_DIR = Path(__file__).resolve().parent
 _AGENTSYSTEM_ROOT = _CONFIG_DIR.parent.parent
-
-CHECKPOINT_DB_PATH = Path(os.environ.get(
-    "CHECKPOINT_DB_PATH",
-    str(_AGENTSYSTEM_ROOT / "data" / "checkpoints" / "checkpoints.db"),
-))
+_DEFAULT_CHECKPOINT_DB_PATH = _AGENTSYSTEM_ROOT / "data" / "checkpoints" / "checkpoints.db"
 
 
-# How long the orchestrator's A2A client waits for a remote agent's response
-# before giving up and reporting an error ToolResult, instead of inheriting
-# httpx's stock 5-second default. A RAG/Actions turn does up to two
-# sequential LLM calls plus retrieval, and a freshly started agent server's
-# first real call has been observed taking ~128s (one-time chat-template
-# warm-up cost) -- both comfortably exceed 5s, which was silently truncating
-# real, in-progress calls into false timeout errors (see 2026-08-26 findings).
-REMOTE_AGENT_TIMEOUT_SECONDS = float(os.environ.get("REMOTE_AGENT_TIMEOUT_SECONDS", "180"))
+class OrchestratorSettings(BaseSettings):
+    """Every env-configurable setting for the orchestrator process, loaded
+    from real environment variables first, then this agent's own .env file
+    (orchestrator/.env, see .env.example), then the defaults below -- and
+    validated at process startup rather than deep inside vLLM later. Field
+    names are lowercase versions of the actual env var names below (matched
+    case-insensitively by pydantic-settings), so no explicit alias is needed."""
+
+    model_config = SettingsConfigDict(
+        env_file=str(_CONFIG_DIR / ".env"), env_file_encoding="utf-8", extra="ignore"
+    )
+
+    remote_agents: str = _DEFAULT_REMOTE_AGENTS
+    remote_agents_verbatim: str = _DEFAULT_REMOTE_AGENTS_VERBATIM
+    checkpoint_db_path: Path = _DEFAULT_CHECKPOINT_DB_PATH
+
+    # How long the orchestrator's A2A client waits for a remote agent's
+    # response before giving up and reporting an error ToolResult, instead of
+    # inheriting httpx's stock 5-second default. A RAG/Actions turn does up
+    # to two sequential LLM calls plus retrieval, and a freshly started agent
+    # server's first real call has been observed taking ~128s (one-time
+    # chat-template warm-up cost) -- both comfortably exceed 5s, which was
+    # silently truncating real, in-progress calls into false timeout errors
+    # (see 2026-08-26 findings).
+    remote_agent_timeout_seconds: float = Field(default=180.0, gt=0)
+
+    # This process's own vLLM engine -- previously hardcoded/read ad hoc in
+    # orchestrator/pipeline/llm.py instead of living here with everything
+    # else; moved in now so swapping to a Traditional Chinese model later is
+    # a config change, not a code change.
+    orchestrator_llm_model: str = "google/gemma-4-E4B-it"
+    orchestrator_gpu_memory_utilization: float = Field(default=0.6, gt=0, le=1)
+    orchestrator_max_model_len: int = Field(default=4096, gt=0)
+
+
+settings = OrchestratorSettings()
+
+# Backward-compatible module-level constants -- every existing
+# "from orchestrator import config; config.REMOTE_AGENTS"-style call site
+# elsewhere in the codebase keeps working unchanged.
+REMOTE_AGENTS = _parse_remote_agents(settings.remote_agents, settings.remote_agents_verbatim)
+CHECKPOINT_DB_PATH = settings.checkpoint_db_path
+REMOTE_AGENT_TIMEOUT_SECONDS = settings.remote_agent_timeout_seconds
+ORCHESTRATOR_LLM_MODEL = settings.orchestrator_llm_model
+ORCHESTRATOR_GPU_MEMORY_UTILIZATION = settings.orchestrator_gpu_memory_utilization
+ORCHESTRATOR_MAX_MODEL_LEN = settings.orchestrator_max_model_len

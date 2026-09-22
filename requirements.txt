@@ -1,5 +1,6 @@
-vllm
+# vllm  # skipped on native Windows: needs CUDA toolkit + MSVC build tools to compile tilelang; revisit via WSL2
 pydantic
+pydantic-settings>=2.0,<3.0
 llama-index
 llama-index-embeddings-huggingface
 qdrant-client

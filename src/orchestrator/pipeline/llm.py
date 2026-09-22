@@ -1,5 +1,4 @@
 # Interacts first-hand with the language model
-import os
 from vllm import LLM, SamplingParams
 from vllm.sampling_params import StructuredOutputsParams
 from orchestrator.pipeline.prompts import (
@@ -9,6 +8,11 @@ from orchestrator.pipeline.prompts import (
     build_filename_prompt,
 )
 from orchestrator import memory_manager
+from orchestrator.config import (
+    ORCHESTRATOR_GPU_MEMORY_UTILIZATION,
+    ORCHESTRATOR_LLM_MODEL,
+    ORCHESTRATOR_MAX_MODEL_LEN,
+)
 from schemas.tool_call import ToolCall
 from tools.gpu_utils import check_gpu_memory
 
@@ -36,14 +40,13 @@ class OrchestratorLLM():
         # headroom), but expect to lower this (e.g. via
         # ORCHESTRATOR_GPU_MEMORY_UTILIZATION=0.55) whenever another agent's
         # process is already running and holding some of the card.
-        gpu_memory_utilization = float(os.environ.get("ORCHESTRATOR_GPU_MEMORY_UTILIZATION", "0.6"))
-        check_gpu_memory(gpu_memory_utilization)
+        check_gpu_memory(ORCHESTRATOR_GPU_MEMORY_UTILIZATION)
 
         self.llm = LLM(
-            model="google/gemma-4-E4B-it",  # Gemma 4 E4B as the LLM brain of the orchestrator
-            gpu_memory_utilization=gpu_memory_utilization,  # reserve this fraction of VRAM for the KV cache and runtime buffers (tweak via ORCHESTRATOR_GPU_MEMORY_UTILIZATION if memory runs out when running)
-            max_model_len=4096  # sets the maximum context window that vLLM will allocate KV cache for
-        )  # Use this to install gemma4:26B quantized via Huggingface
+            model=ORCHESTRATOR_LLM_MODEL,  # the LLM brain of the orchestrator (tweak via ORCHESTRATOR_LLM_MODEL, see orchestrator/config.py)
+            gpu_memory_utilization=ORCHESTRATOR_GPU_MEMORY_UTILIZATION,  # reserve this fraction of VRAM for the KV cache and runtime buffers (tweak via ORCHESTRATOR_GPU_MEMORY_UTILIZATION if memory runs out when running)
+            max_model_len=ORCHESTRATOR_MAX_MODEL_LEN  # sets the maximum context window that vLLM will allocate KV cache for
+        )
 
         self.decision_sampling_params = SamplingParams(
             temperature=0,  # temperture: randomness
