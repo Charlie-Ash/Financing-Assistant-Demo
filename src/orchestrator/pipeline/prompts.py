@@ -1,5 +1,8 @@
-# Orchestrator prompt building
+# Orchestrator prompt building. Prompts are in Traditional Chinese (Taiwan)
+# since that's the language users write in and replies must come back in --
+# see llm/text_norm.py for the OpenCC safety net applied to every output.
 from chat_history import history_to_chat_messages as _history_to_chat_messages
+from llm.text_norm import ZH_TW_REPLY_INSTRUCTION
 
 
 def build_tool_decision_prompt(user_message, history_messages, tool_descriptions):
@@ -21,8 +24,8 @@ def build_tool_decision_prompt(user_message, history_messages, tool_descriptions
     )
 
     examples_block = "\n\n".join(
-        f"""User: {tool['example_user_message']}
-        Output:
+        f"""使用者: {tool['example_user_message']}
+        輸出:
         {{
             "tool": "{tool['name']}",
             "action": "run",
@@ -32,17 +35,17 @@ def build_tool_decision_prompt(user_message, history_messages, tool_descriptions
     )
 
     SYSTEM_PROMPT = f"""
-        You are an orchestrator to a vast agent system.
-        It is your role to decide on a suitble tool within the agent system to use in the user's work.
-        Route tools that are connected to other agents accordingly from the user's message.
+        你是一個多代理系統的協調者(orchestrator)。
+        你的任務是根據使用者的訊息，從系統中選出最適合處理這項工作的工具。
+        連接到其他代理的工具，請依使用者訊息的意圖正確分派。
         -----------------------
-        TOOLS AVAILABLE
+        可用工具
         -----------------------
 
         {tools_block}
 
         -----------------------
-        EXAMPLES
+        範例
         -----------------------
 
         {examples_block}
@@ -73,20 +76,20 @@ def build_response_prompt(user_message, history_messages, tool_call, tool_result
         # The tool already produced a complete, user-ready answer (e.g. RAG) --
         # tell the model to show it as-is instead of paraphrasing it away.
         instruction = (
-            "The tool result below was already fully generated as a complete answer. "
-            "Relay it to the user as-is without rewriting or summarizing it, then ask "
-            "what they'd like help with next."
+            "下方的工具結果已經是一份完整的回答。請原封不動地轉達給使用者，"
+            "不要改寫或摘要，然後詢問使用者接下來還需要什麼協助。"
         )
     else:
-        instruction = "Using the tool result below, write a concise, helpful reply to the user."
+        instruction = "請根據下方的工具結果，給使用者一個簡潔且有幫助的回覆。"
 
     SYSTEM_PROMPT = f"""
-        You are the same orchestrator agent, now replying to the user directly.
-        You already routed the user's message to the "{tool_call.tool}" tool and it has produced a result.
+        你是同一位協調者，現在要直接回覆使用者。
+        你已經把使用者的訊息分派給「{tool_call.tool}」工具，而它已產生結果。
         {instruction}
-        Do not mention tool names, JSON, or internal routing details.
+        不要提及工具名稱、JSON 或任何內部分派細節。
+        {ZH_TW_REPLY_INSTRUCTION}
 
-        Tool result:
+        工具結果:
         {tool_result["output"]}
     """
 
@@ -122,30 +125,30 @@ def build_mem_update_prompt(user_message, tool_call, tool_result, final_response
         # string-splitting needed: tool_result["output"] is already just the
         # answer text, since relay_verbatim is carried as its own field now.
         result_section = f"""
-        This turn used the RAG tool. Structure your memory note as two labeled lines:
-        Query: <the user's question, restated concisely>
-        Answer: <the key facts from the RAG answer below, condensed>
+        本輪使用了 RAG 工具。請將記憶筆記寫成兩行並加上標籤:
+        問題: <簡潔重述使用者的問題>
+        答案: <濃縮下方 RAG 回答中的關鍵事實>
 
-        Raw RAG answer (verbatim, use as source of truth, not the final reply):
+        RAG 原始回答（逐字，請以此為準，而非最終回覆）:
         {result_text}
         """
     else:
         result_section = f"""
-        Tool used: {tool_call.tool}
-        Tool result: {result_text}
+        使用的工具: {tool_call.tool}
+        工具結果: {result_text}
         """
 
     SYSTEM_PROMPT = f"""
-        You are the memory-keeper for an ongoing conversation with an agent system.
-        Write a concise memory note (2-4 sentences, or the Query/Answer format if
-        instructed below) summarizing what was asked and what was learned or decided
-        this turn. This note will be read back by yourself in later turns, so prioritize
-        concrete facts, names, decisions, and any retrieved answers over vague description.
-        Do not restate these instructions. Output only the note text, no headers.
+        你是這段與代理系統持續對話的記憶管理者。
+        請寫一則簡潔的記憶筆記（2-4 句，若下方有指示則使用「問題/答案」格式），
+        摘要本輪使用者問了什麼、得到了什麼資訊或做了什麼決定。
+        這則筆記之後會由你自己在後續回合讀回，因此請優先記錄具體的事實、名稱、決定與檢索到的答案，
+        而不是模糊的描述。不要重述這些指示。只輸出筆記內容，不要加標題。
+        {ZH_TW_REPLY_INSTRUCTION}
 
         {result_section}
 
-        Orchestrator's final reply to the user this turn: {final_response}
+        協調者本輪給使用者的最終回覆: {final_response}
     """
 
     messages = [
@@ -165,14 +168,16 @@ def build_mem_update_prompt(user_message, tool_call, tool_result, final_response
 # Fourth-stage prompt: names the saved memory file at end-of-session ("bye" + "y").
 def build_filename_prompt(memory_content):
 
+    # The slug stays in English on purpose: it becomes a file name, and
+    # memory_manager's sanitizer only keeps ASCII letters/digits.
     SYSTEM_PROMPT = f"""
-        You are naming a saved chat memory file for later reference.
-        Based on the conversation memory below, output a short topic slug: 2-5 words,
-        lowercase, words separated by underscores, no punctuation, no file extension,
-        and do not include the words "chat" or "points" (a suffix is appended automatically).
-        Output ONLY the slug, nothing else.
+        你要為一份已儲存的對話記憶檔命名，方便日後查閱。
+        請根據下方的對話記憶，輸出一個簡短的英文主題代稱(slug)：2-5 個英文單字，
+        全部小寫、單字之間以底線連接，不含標點符號與副檔名，
+        且不要包含 "chat" 或 "points" 這兩個字（系統會自動加上後綴）。
+        只輸出代稱本身，不要輸出其他任何內容。
 
-        Conversation memory:
+        對話記憶:
         {memory_content}
     """
 
@@ -183,7 +188,7 @@ def build_filename_prompt(memory_content):
         },
         {
             "role": "user",
-            "content": "Provide the slug now.",
+            "content": "請現在提供代稱。",
         }
     ]
 

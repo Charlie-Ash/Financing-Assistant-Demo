@@ -63,6 +63,25 @@ class FakeOrchestratorLLM:
         )
 
 
+class FakeChatLLM:
+    """Stand-in for llm.client.ChatLLM: records every chat() call and
+    returns a canned reply, so the REAL RAG/Actions subgraphs can be run
+    without an LLM server behind them."""
+
+    def __init__(self, canned_text: str = "", error: Exception | None = None):
+
+        self.canned_text = canned_text
+        self.error = error
+        self.calls = []
+
+    def chat(self, messages, sampling, json_schema=None) -> str:
+
+        self.calls.append({"messages": messages, "sampling": sampling, "json_schema": json_schema})
+        if self.error is not None:
+            raise self.error
+        return self.canned_text
+
+
 class FakeTool:
     """A minimal stand-in satisfying tools.base.Tool: records the args it was
     called with and returns a fixed ToolResult."""

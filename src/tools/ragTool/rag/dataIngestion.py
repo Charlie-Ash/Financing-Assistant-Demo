@@ -1,19 +1,15 @@
 # Llama Index for chunking and linking up with other parts
 from llama_index.core import VectorStoreIndex, Document
 from llama_index.core.node_parser import SentenceSplitter
-from llama_index.embeddings.huggingface import HuggingFaceEmbedding
 from llama_index.vector_stores.qdrant import QdrantVectorStore
 from llama_index.core import StorageContext
 # Qdrant DB client
 import qdrant_client
 # PDF parser
 import pymupdf
-# Pytorch to empty CUDA cache (after embedding)
-import torch
-# Garbage collector
-import gc
 
-from tools.ragTool.config import COLLECTION_NAME, QDRANT_DB_PATH, EMBEDDING_MODEL, DATA_DIR
+from tools.ragTool.config import COLLECTION_NAME, QDRANT_DB_PATH, DATA_DIR
+from tools.ragTool.rag.models import load_embedding_model
 
 
 def load_documents() -> list[Document]:  # Probably add a path argument here in the future for better modification
@@ -60,15 +56,8 @@ def build_vector_index() -> tuple[VectorStoreIndex, qdrant_client.QdrantClient]:
     )
     chunks = splitter.get_nodes_from_documents(documents=documents)  # All PDF file content's chunks
 
-    # Embed chunks
-    try:
-        embedding_model = HuggingFaceEmbedding(
-            model_name=EMBEDDING_MODEL,  # BAAI/bge-m3: multilingual embedding model, ~568M params
-            trust_remote_code=True,
-            device="cpu"  # Embedding to run on CPU since it interferes with LLM in the GPU (resource-wise)
-        )
-    except Exception as e:
-        raise RuntimeError(f"Failed to load embedding model '{EMBEDDING_MODEL}': {e}") from e
+    # Embed chunks (model and device come from config -- see rag/models.py)
+    embedding_model = load_embedding_model()
 
     # Setup Qdrant
     db_client = qdrant_client.QdrantClient(path=QDRANT_DB_PATH)  # DB client
@@ -92,14 +81,7 @@ def build_vector_index() -> tuple[VectorStoreIndex, qdrant_client.QdrantClient]:
         embed_model= embedding_model
     )
 
-    # Clean-up (Delete embedding model & empty CUDA cache)
-    del embedding_model
-    gc.collect()
-
-    if torch.cuda.is_available():
-        torch.cuda.empty_cache()
-
-    # Return Index
+    # Return Index (it keeps the embedding model for embedding queries)
     return index, db_client
 
 
@@ -117,14 +99,7 @@ def load_vector_index() -> tuple[VectorStoreIndex, qdrant_client.QdrantClient]: 
     )
 
     # Embedding model is still needed when loading existing DB. Still used in user query.
-    try:
-        embedding_model = HuggingFaceEmbedding(
-            model_name=EMBEDDING_MODEL,
-            trust_remote_code=True,
-            device="cpu"  # Embedding to run on CPU since it interferes with LLM in the GPU (resource-wise)
-        )
-    except Exception as e:
-        raise RuntimeError(f"Failed to load embedding model '{EMBEDDING_MODEL}': {e}") from e
+    embedding_model = load_embedding_model()
 
     # Persisting indexes
     index = VectorStoreIndex.from_vector_store(
@@ -133,12 +108,5 @@ def load_vector_index() -> tuple[VectorStoreIndex, qdrant_client.QdrantClient]: 
         embed_model= embedding_model,
     )
 
-    # Clean-up (Delete embedding model & empty CUDA cache)
-    del embedding_model
-    gc.collect()
-
-    if torch.cuda.is_available():
-        torch.cuda.empty_cache()
-
-    # Return Index
+    # Return Index (it keeps the embedding model for embedding queries)
     return index, db_client

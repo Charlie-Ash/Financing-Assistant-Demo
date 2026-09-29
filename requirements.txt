@@ -1,6 +1,12 @@
-# vllm  # skipped on native Windows: needs CUDA toolkit + MSVC build tools to compile tilelang; revisit via WSL2
+# Only the shared LLM server process (python -m llm.serve, Linux GPU box)
+# needs vllm; every agent process talks to it over HTTP via openai. On native
+# Windows vllm won't compile (needs CUDA toolkit + MSVC to build tilelang) --
+# comment it out there; agents and tests don't need it.
+vllm
+openai>=1.40
 pydantic
 pydantic-settings>=2.0,<3.0
+opencc-python-reimplemented
 llama-index
 llama-index-embeddings-huggingface
 qdrant-client

@@ -1,5 +1,5 @@
-# Shared GPU pre-flight check, used by every tool that loads its own vLLM
-# engine (ragTool, actionsTool) before construction.
+# GPU pre-flight check, run by llm/serve.py before starting the shared vLLM
+# server -- the only process in this system that loads an LLM engine.
 import torch
 
 
@@ -28,7 +28,8 @@ def check_gpu_memory(gpu_memory_utilization: float) -> None:
             f"{total_gib:.1f} GiB device. Likely causes: a stale vLLM worker "
             f"process from a previous crashed run still holding the CUDA "
             f"context (check `nvidia-smi` and kill leftover python "
-            f"processes), another application using the GPU, or another "
-            f"agent's model already being loaded. Lower this engine's "
-            f"*_GPU_MEMORY_UTILIZATION env var or free up VRAM before retrying."
+            f"processes), another application using the GPU (e.g. an old "
+            f"Docker container), or a second LLM server already running. "
+            f"Lower LLM_GPU_MEMORY_UTILIZATION in src/llm/.env, pick a "
+            f"smaller model with `--profile`, or free up VRAM before retrying."
         )

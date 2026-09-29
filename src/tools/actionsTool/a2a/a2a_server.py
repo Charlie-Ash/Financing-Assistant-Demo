@@ -1,6 +1,6 @@
 # Standalone entrypoint: starts the Actions tool as its own A2A protocol
-# server process (own FastAPI/uvicorn, own vLLM engine -- see
-# tools/actionsTool/actions/tool_class.py). Run as
+# server process (own FastAPI/uvicorn; text generation goes through the
+# shared LLM server -- see tools/actionsTool/actions/tool_class.py). Run as
 # `python -m tools.actionsTool.a2a.a2a_server` from inside src/, the same way
 # main.py and RAG's a2a_server.py are run today -- NOT `python a2a_server.py`
 # directly, which would put the wrong directory on sys.path and break this
@@ -20,32 +20,26 @@ from tools.actionsTool.config import ACTIONS_A2A_HOST, ACTIONS_A2A_PORT
 # /.well-known/agent-card.json to discover what this agent can do, before
 # ever sending it work. Kept as its own function (not inlined in main())
 # so it can be constructed and asserted on in tests without needing
-# ActionsTool()'s GPU side effects.
+# ActionsTool()'s LLM-server connection.
 def build_agent_card(host: str, port: int) -> AgentCard:
 
     skill = AgentSkill(
         id="save_note",
         name="Save a note",
         description=(
-            "Writes down information the user asks to remember, as a short "
-            "note saved to a text file. Generates the note's content itself "
-            "from the request (optionally using recent conversation history "
-            "to resolve references to earlier turns) and picks a short, "
-            "filesystem-safe file name for it."
+            "當使用者明確要求記下、儲存、備註或提醒某件事時使用。"
+            "會根據要求（必要時參考先前的對話內容）撰寫筆記並存成文字檔。"
         ),
         tags=["actions", "notes", "write"],
         examples=[
-            "Remember Pete likes astronomy",
-            "Note down your previous answer to this question",
+            "幫我記一下：王先生下週二要來簽車貸合約",
+            "把你剛才的回答記成筆記",
         ],
     )
 
     return AgentCard(
         name="Actions Agent",
-        description=(
-            "Standalone agent that writes user-provided information to a "
-            "note file, generating the note's content itself."
-        ),
+        description="獨立代理：把使用者要求記錄的資訊寫成筆記檔，筆記內容由代理自行撰寫。",
         url=f"http://{host}:{port}/",
         version="0.1.0",
         default_input_modes=["text/plain"],
@@ -60,9 +54,8 @@ def build_agent_card(host: str, port: int) -> AgentCard:
 
 def main():
 
-    # Only place in this process that touches GPU -- builds the vLLM engine
-    # exactly as the orchestrator's in-process ActionsTool() does today, just
-    # now happening in its own process.
+    # Connects to the shared LLM server (waiting for it to finish loading
+    # if needed) and builds this agent's subgraph.
     from tools.actionsTool.actions.tool_class import ActionsTool
 
     actions_tool = ActionsTool()

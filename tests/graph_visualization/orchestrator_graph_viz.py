@@ -1,5 +1,5 @@
-# Renders the orchestrator's full graph to a PNG, without needing a GPU or
-# real vllm/OrchestratorLLM objects, or a real network.
+# Renders the orchestrator's full graph to a PNG, without needing an LLM
+# server, real OrchestratorLLM objects, or a real network.
 #
 # Run directly: python tests/graph_visualization/orchestrator_graph_viz.py
 # Deliberately NOT named test_*.py -- pytest's default discovery only picks up
@@ -37,7 +37,7 @@ OUTPUT_PATH = Path(__file__).resolve().parent / "output" / "orchestrator_graph.p
 
 async def main():
     # build_graph() is written to accept ANY object with the right shape for
-    # llm/tool_router -- it never imports vllm itself (see the
+    # llm/tool_router -- it never imports the LLM client itself (see the
     # `if TYPE_CHECKING:` guard at the top of orchestrator/pipeline/graph.py), so
     # duck-typed stand-ins work fine for drawing the graph's structure.
     llm = FakeOrchestratorLLM(next_tool_call=ToolCall(tool="default", action="run", args={}))

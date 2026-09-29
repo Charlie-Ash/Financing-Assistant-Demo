@@ -18,5 +18,8 @@ qdrant_db/
 # Notes tool's saved .txt files notes
 data/notes/
 
+# Eval run outputs (see evals/)
+evals/results/
+
 # Generated graph diagram PNGs (see tests/graph_visualization/)
 tests/graph_visualization/output/
