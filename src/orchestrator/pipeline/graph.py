@@ -12,9 +12,9 @@ from orchestrator.agents.remote_agent import call_remote_agent
 from orchestrator.pipeline.state import OrchestratorState
 
 # OrchestratorLLM/ToolRouter are only used here as type hints. Importing them
-# for real (rather than just for type-checking) would force this module to
-# also import vllm transitively, even though build_graph itself never touches vllm
-# directly and is perfectly happy running against fake/mocked stand-ins (see
+# for real (rather than just for type-checking) would pull in the LLM client
+# and network code transitively, even though build_graph itself never touches
+# either and is perfectly happy running against fake/mocked stand-ins (see
 # tests/fake_dependencies.py) that only need to match the same shape.
 if TYPE_CHECKING:
     from orchestrator.pipeline.llm import OrchestratorLLM

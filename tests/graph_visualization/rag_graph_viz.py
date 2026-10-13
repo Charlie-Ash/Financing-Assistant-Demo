@@ -1,5 +1,5 @@
 # Renders the RAG tool's subgraph (extract_query -> retrieve -> generate_answer)
-# to a PNG, without needing a GPU or real vllm/llama_index objects.
+# to a PNG, without needing an LLM server or real llama_index objects.
 #
 # Run directly: python tests/graph_visualization/rag_graph_viz.py
 # Deliberately NOT named test_*.py -- pytest's default discovery only picks up
@@ -22,12 +22,12 @@ OUTPUT_PATH = Path(__file__).resolve().parent / "output" / "rag_graph.png"
 
 
 def main():
-    # build_rag_subgraph()'s index/llm/sampling_params params are only ever
+    # build_rag_subgraph()'s index/llm/sampling/reranker params are only ever
     # read inside its node *functions* (retrieve, generate_answer) when the
     # graph is actually invoked/run. Building the graph and asking it to draw
     # itself never calls those node functions -- it just inspects the graph's
-    # structure (nodes + edges) -- so passing None for all three is safe here.
-    compiled_graph = build_rag_subgraph(index=None, llm=None, sampling_params=None)
+    # structure (nodes + edges) -- so passing None for all of them is safe here.
+    compiled_graph = build_rag_subgraph(index=None, llm=None, sampling=None)
 
     # get_graph() returns a langgraph "Graph" object describing the compiled
     # graph's nodes/edges. draw_mermaid_png() turns that into an actual PNG

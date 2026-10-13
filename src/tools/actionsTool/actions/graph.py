@@ -1,33 +1,36 @@
 # Builds the Actions tool's own SUBGRAPH. Mirrors orchestrator/pipeline/graph.py's
 # build_graph(llm, tool_router) and ragTool/rag/graph.py's
-# build_rag_subgraph(): takes the already-loaded llm/sampling_params as
-# parameters instead of constructing them itself, so this module's wiring
-# can be tested without a GPU (see tests/fake_dependencies.py).
+# build_rag_subgraph(): takes the already-built llm/sampling as parameters
+# instead of constructing them itself, so this module's wiring can be tested
+# without an LLM server (see tests/fake_dependencies.py).
 from typing import TYPE_CHECKING
 
 from langgraph.graph import StateGraph, START, END
 
 from chat_history import history_to_chat_messages
-from tools.actionsTool.actions.note_schema import NoteContent
+from llm.text_norm import ZH_TW_REPLY_INSTRUCTION
+from tools.actionsTool.actions.note_schema import NOTE_SCHEMA, NoteContent
 from tools.actionsTool.actions.noteWriter import save_note
 from tools.actionsTool.actions.state import ActionsSubgraphState
 
-# Imported only for "LLM"/"SamplingParams" to be resolved as types for
+# Imported only for "ChatLLM"/"SamplingConfig" to be resolved as types for
 # string-quoted annotations on build_actions_subgraph.
 if TYPE_CHECKING:
-    from vllm import LLM, SamplingParams
+    from llm.client import ChatLLM
+    from llm.sampling import SamplingConfig
 
+# The file_name slug stays ASCII on purpose: it becomes a file on disk
+# (see noteWriter.py's sanitizer), while the note content itself is Chinese.
 SYS_PROMPT = (
-    "You are a note-taking assistant. Given the user's request below, write "
-    "the note content that should be saved, and choose a short, "
-    "filesystem-safe file_name slug (lowercase, words separated by "
-    "underscores, no extension, no spaces or punctuation). If the request "
-    "refers to something said earlier in the conversation (e.g. 'note down "
-    "your previous answer'), use the conversation history to resolve it."
+    "你是一位筆記助理。請根據下方使用者的要求，撰寫應該儲存的筆記內容(content)，"
+    "並為筆記選一個簡短、可作為檔名的英文代稱(file_name)：全部小寫英文、"
+    "單字之間以底線連接，不含副檔名、空白或標點符號。"
+    "若要求提到先前對話中的內容（例如「把你剛才的回答記下來」），請參考對話紀錄來判斷。"
+    + ZH_TW_REPLY_INSTRUCTION
 )
 
 
-def build_actions_subgraph(llm: "LLM", sampling_params: "SamplingParams"):
+def build_actions_subgraph(llm: "ChatLLM", sampling: "SamplingConfig"):
     """Assemble and compile the Actions tool's subgraph: extract_request ->
     generate_content -> save_note, with an empty-request short-circuit
     straight to END and a generation-failure short-circuit that skips
@@ -85,8 +88,8 @@ def build_actions_subgraph(llm: "LLM", sampling_params: "SamplingParams"):
         ]
 
         try:
-            outputs = llm.chat(messages, sampling_params)
-            note = NoteContent.model_validate_json(outputs[0].outputs[0].text)
+            # json_schema forces output to match NoteContent's schema
+            note = NoteContent.model_validate_json(llm.chat(messages, sampling, json_schema=NOTE_SCHEMA))
         except Exception as e:
             return {"tool_result": {"output": f"Actions tool error: generation failed ({e})", "relay_verbatim": False}}
 

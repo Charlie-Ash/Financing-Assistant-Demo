@@ -9,6 +9,29 @@ from tools.defaultTool.tool_class import DefaultTool
 from orchestrator import config
 from orchestrator.agents.remote_agent import RemoteAgent, discover_remote_agent
 
+# "default" has no AgentCard to describe it, so its routing-prompt entry is
+# hand-written here.
+DEFAULT_TOOL_DESCRIPTION = {
+    "name": "default",
+    "description": "用於一般對話、閒聊、常識問題，或意圖不明確、不需要查詢文件也不需要記錄筆記的訊息。",
+    "example_user_message": "你好",
+}
+
+
+# One routing-prompt entry for a remote agent, taken from its AgentCard's
+# first skill. Module-level (not a method) so evals can describe agent cards
+# built locally, without discovering live agents over the network.
+def describe_agent_card(name: str, agent_card) -> dict:
+
+    skill = agent_card.skills[0]
+    example = skill.examples[0] if skill.examples else agent_card.description
+
+    return {
+        "name": name,
+        "description": skill.description,
+        "example_user_message": example,
+    }
+
 
 class ToolRouter():
 
@@ -60,21 +83,6 @@ class ToolRouter():
     # can't drift out of sync with what that agent actually does.
     def describe_tools_for_prompt(self) -> list[dict]:
 
-        descriptions = [{
-            "name": "default",
-            "description": "Use for general testing or unclear intent.",
-            "example_user_message": "hello",
-        }]
-
-        for agent in self.remote_agents.values():
-
-            skill = agent.agent_card.skills[0]
-            example = skill.examples[0] if skill.examples else agent.agent_card.description
-
-            descriptions.append({
-                "name": agent.name,
-                "description": skill.description,
-                "example_user_message": example,
-            })
-
-        return descriptions
+        return [DEFAULT_TOOL_DESCRIPTION] + [
+            describe_agent_card(agent.name, agent.agent_card) for agent in self.remote_agents.values()
+        ]

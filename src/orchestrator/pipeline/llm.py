@@ -1,6 +1,7 @@
 # Interacts first-hand with the language model
-from vllm import LLM, SamplingParams
-from vllm.sampling_params import StructuredOutputsParams
+from llm.client import ChatLLM
+from llm.sampling import SamplingConfig
+from orchestrator import config
 from orchestrator.pipeline.prompts import (
     build_tool_decision_prompt,
     build_response_prompt,
@@ -8,73 +9,52 @@ from orchestrator.pipeline.prompts import (
     build_filename_prompt,
 )
 from orchestrator import memory_manager
-from orchestrator.config import (
-    ORCHESTRATOR_GPU_MEMORY_UTILIZATION,
-    ORCHESTRATOR_LLM_MODEL,
-    ORCHESTRATOR_MAX_MODEL_LEN,
-)
 from schemas.tool_call import ToolCall
-from tools.gpu_utils import check_gpu_memory
 
 class OrchestratorLLM():
 
-    # Initialization settings currently set to that of VLLM_RAG
     # tool_schema is built by schemas.tool_schema.build_tool_schema() from
     # whatever tool names ToolRouter actually discovered/configured at
     # startup -- passed in rather than imported as a module-level constant,
     # since that set isn't known until ToolRouter.discover() has run.
-    def __init__(self, tool_schema: dict):
+    # chat_llm is injectable (evals pass one with Traditional-Chinese
+    # normalization off); by default it's built from orchestrator/config.py
+    # and pointed at the shared LLM server (see src/llm/).
+    def __init__(self, tool_schema: dict, chat_llm: ChatLLM | None = None):
 
-        # RAG and Actions each run in their own OS process now (standalone A2A
-        # servers), not sharing this process's memory space -- so this fraction
-        # is no longer budgeted against a single shared-process total. Each
-        # process (this one included) pays its own fixed CUDA/torch.compile/
-        # CUDA-graph overhead on top of its nominal fraction, so fractions must
-        # be tuned per run session against whatever's actually free (see
-        # A2A_DIAGNOSIS.md / A2A_DIAGNOSIS_FIX_PLAN.md for measured numbers and
-        # the serialized-session run procedure this project uses to fit three
-        # independent vLLM engines on one GPU). gemma-4-E4B-it's own weights
-        # alone take ~15.28 GiB (measured via vLLM's model-loading log), so this
-        # fraction must clear that bar before any KV cache/overhead is even
-        # considered -- on a 32 GiB card, 0.6 gives ~19.2 GiB (weights + ~4 GiB
-        # headroom), but expect to lower this (e.g. via
-        # ORCHESTRATOR_GPU_MEMORY_UTILIZATION=0.55) whenever another agent's
-        # process is already running and holding some of the card.
-        check_gpu_memory(ORCHESTRATOR_GPU_MEMORY_UTILIZATION)
+        if chat_llm is None:
+            chat_llm = ChatLLM.from_settings(config.settings)
+            chat_llm.wait_until_ready(config.settings.llm_startup_wait_seconds)
 
-        self.llm = LLM(
-            model=ORCHESTRATOR_LLM_MODEL,  # the LLM brain of the orchestrator (tweak via ORCHESTRATOR_LLM_MODEL, see orchestrator/config.py)
-            gpu_memory_utilization=ORCHESTRATOR_GPU_MEMORY_UTILIZATION,  # reserve this fraction of VRAM for the KV cache and runtime buffers (tweak via ORCHESTRATOR_GPU_MEMORY_UTILIZATION if memory runs out when running)
-            max_model_len=ORCHESTRATOR_MAX_MODEL_LEN  # sets the maximum context window that vLLM will allocate KV cache for
-        )
+        self.llm = chat_llm
+        self.tool_schema = tool_schema
 
-        self.decision_sampling_params = SamplingParams(
+        self.decision_sampling = SamplingConfig(
             temperature=0,  # temperture: randomness
             top_p=1.0,  # top_p; nucleus sampling
             max_tokens=512,  # Max tokens outputted
-            repetition_penalty = 1.1,  # Penalty to apply if tokens continue repeating.
-            structured_outputs=StructuredOutputsParams(json=tool_schema)  # Forces output to match ToolCall's schema, restricted to the tools actually discovered
+            repetition_penalty=1.1,  # Penalty to apply if tokens continue repeating.
         )
 
-        self.response_sampling_params = SamplingParams(
+        self.response_sampling = SamplingConfig(
             temperature=0.4,  # some randomness allowed; this stage writes free text, not JSON
             top_p=0.95,  # top_p; nucleus sampling
             max_tokens=512,  # Max tokens outputted
-            repetition_penalty = 1.1  # Penalty to apply if tokens continue repeating.
+            repetition_penalty=1.1,  # Penalty to apply if tokens continue repeating.
         )
 
-        self.mem_update_sampling_params = SamplingParams(
+        self.mem_update_sampling = SamplingConfig(
             temperature=0.2,  # low randomness; this stage writes a short factual summary
             top_p=0.9,  # top_p; nucleus sampling
             max_tokens=180,  # memory notes are meant to stay short
-            repetition_penalty=1.1  # Penalty to apply if tokens continue repeating.
+            repetition_penalty=1.1,  # Penalty to apply if tokens continue repeating.
         )
 
-        self.filename_sampling_params = SamplingParams(
+        self.filename_sampling = SamplingConfig(
             temperature=0.0,  # deterministic; this stage outputs a short filename slug
             top_p=1.0,  # top_p; nucleus sampling
             max_tokens=24,  # a 2-5 word slug needs very few tokens
-            repetition_penalty=1.1  # Penalty to apply if tokens continue repeating.
+            repetition_penalty=1.1,  # Penalty to apply if tokens continue repeating.
         )
 
     # Phase 1 Orchestrotor LLM usage: Tool decision
@@ -82,23 +62,10 @@ class OrchestratorLLM():
     # see build_tool_decision_prompt for the shape.
     def tool_decision(self, user_message, history_messages, tool_descriptions) -> ToolCall:
 
-        unformatted_prompt = build_tool_decision_prompt(user_message, history_messages, tool_descriptions)
+        messages = build_tool_decision_prompt(user_message, history_messages, tool_descriptions)
 
-        # Use tokenizers to format "prompt"
-        tokenizer = self.llm.get_tokenizer()
-
-        # Formatted prompt
-        formatted_prompt = tokenizer.apply_chat_template(
-
-            unformatted_prompt,
-            tokenize=False,
-            add_generation_prompt=True,
-
-        )
-
-        output = self.llm.generate([formatted_prompt], self.decision_sampling_params)
-
-        raw_text = output[0].outputs[0].text
+        # json_schema forces output to match ToolCall's schema, restricted to the tools actually discovered
+        raw_text = self.llm.chat(messages, self.decision_sampling, json_schema=self.tool_schema)
         print("\nRAW MODEL OUTPUT:\n", raw_text)  # Maybe can remove this in the future
 
         # Guided decoding guarantees schema-conformant JSON, so parsing/validation collapses into this one call
@@ -109,21 +76,9 @@ class OrchestratorLLM():
 
         # tool_result is a ToolResult (see tools/base.py); every tool always
         # returns one, so no None-handling is needed here anymore.
-        unformatted_prompt = build_response_prompt(user_message, history_messages, tool_call, tool_result)
+        messages = build_response_prompt(user_message, history_messages, tool_call, tool_result)
 
-        tokenizer = self.llm.get_tokenizer()
-
-        formatted_prompt = tokenizer.apply_chat_template(
-
-            unformatted_prompt,
-            tokenize=False,
-            add_generation_prompt=True,
-
-        )
-
-        output = self.llm.generate([formatted_prompt], self.response_sampling_params)
-
-        return output[0].outputs[0].text.strip()
+        return self.llm.chat(messages, self.response_sampling).strip()
 
     # Phase 3 Orchestrotor LLM usage: Conversation memory update
     def orchestrator_mem_update(self, user_message, tool_call: ToolCall, tool_result, final_response) -> None:
@@ -131,17 +86,9 @@ class OrchestratorLLM():
         try:
             question_number = memory_manager.count_existing_entries() + 1
 
-            unformatted_prompt = build_mem_update_prompt(user_message, tool_call, tool_result, final_response)
+            messages = build_mem_update_prompt(user_message, tool_call, tool_result, final_response)
 
-            tokenizer = self.llm.get_tokenizer()
-            formatted_prompt = tokenizer.apply_chat_template(
-                unformatted_prompt,
-                tokenize=False,
-                add_generation_prompt=True,
-            )
-
-            output = self.llm.generate([formatted_prompt], self.mem_update_sampling_params)
-            note_text = output[0].outputs[0].text.strip() or "(no memory note generated for this turn)"
+            note_text = self.llm.chat(messages, self.mem_update_sampling).strip() or "(no memory note generated for this turn)"
 
             memory_manager.append_entry(question_number, note_text)
 
@@ -155,17 +102,9 @@ class OrchestratorLLM():
         memory_content = memory_manager.read_chat_log()
 
         try:
-            unformatted_prompt = build_filename_prompt(memory_content)
+            messages = build_filename_prompt(memory_content)
 
-            tokenizer = self.llm.get_tokenizer()
-            formatted_prompt = tokenizer.apply_chat_template(
-                unformatted_prompt,
-                tokenize=False,
-                add_generation_prompt=True,
-            )
-
-            output = self.llm.generate([formatted_prompt], self.filename_sampling_params)
-            return output[0].outputs[0].text.strip()
+            return self.llm.chat(messages, self.filename_sampling).strip()
 
         except Exception as e:
             # memory_manager's own sanitizer falls back to a timestamp-based name
