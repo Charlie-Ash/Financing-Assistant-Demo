@@ -4,8 +4,8 @@
 # .env.example next to this file for every setting.
 #
 # No model/VRAM settings live here any more: this agent generates text
-# through the shared LLM server (src/llm/), so which model it uses is
-# decided there, and this process needs no GPU at all.
+# through the shared LLM server or the Gemini API (LLM_PROVIDER, inherited
+# from llm/settings.LLMClientSettings), and this process needs no GPU at all.
 from pathlib import Path
 
 from pydantic import Field

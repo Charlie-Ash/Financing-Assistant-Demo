@@ -4,8 +4,9 @@
 # setting.
 #
 # No generation-model/VRAM settings live here any more: this agent
-# generates text through the shared LLM server (src/llm/). The embedding and
-# reranker models below still run inside this process.
+# generates text through the shared LLM server or the Gemini API
+# (LLM_PROVIDER, inherited from llm/settings.LLMClientSettings). The
+# embedding and reranker models below still run inside this process.
 import re
 from pathlib import Path
 from typing import Literal

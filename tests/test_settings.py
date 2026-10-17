@@ -52,6 +52,35 @@ def test_embed_device_only_accepts_cpu_or_cuda(monkeypatch):
         RagSettings(_env_file=None)
 
 
+def test_gemini_provider_without_api_key_fails_naming_the_key(monkeypatch):
+
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    monkeypatch.delenv("LLM_API_KEY", raising=False)
+    monkeypatch.setenv("LLM_PROVIDER", "gemini")
+
+    with pytest.raises(ValidationError, match="GEMINI_API_KEY"):
+        OrchestratorSettings(_env_file=None)
+
+
+def test_unknown_provider_is_rejected(monkeypatch):
+
+    monkeypatch.setenv("LLM_PROVIDER", "openai")
+
+    with pytest.raises(ValidationError, match="llm_provider"):
+        RagSettings(_env_file=None)
+
+
+def test_gemini_api_key_env_var_is_read_and_kept_secret(monkeypatch):
+
+    monkeypatch.setenv("LLM_PROVIDER", "gemini")
+    monkeypatch.setenv("GEMINI_API_KEY", "AQ.secret-value")
+
+    settings = ActionsSettings(_env_file=None)
+
+    assert settings.llm_api_key.get_secret_value() == "AQ.secret-value"
+    assert "AQ.secret-value" not in repr(settings)
+
+
 def test_non_positive_timeout_is_rejected(monkeypatch):
 
     monkeypatch.setenv("REMOTE_AGENT_TIMEOUT_SECONDS", "0")

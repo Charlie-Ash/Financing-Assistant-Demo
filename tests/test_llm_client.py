@@ -11,7 +11,7 @@ from llm.client import ChatLLM, LLMServerUnavailable
 from llm.profiles import MODEL_PROFILES
 from llm.sampling import SamplingConfig
 from llm.serve import build_serve_command
-from llm.settings import LLMServerSettings
+from llm.settings import LLMClientSettings, LLMServerSettings
 from llm.text_norm import cjk_char_count, simplified_leakage_chars
 
 SAMPLING = SamplingConfig(temperature=0.2, top_p=0.9, max_tokens=64, repetition_penalty=1.1)
@@ -118,6 +118,108 @@ def test_wait_until_ready_fails_with_actionable_message_when_unreachable():
 
     with pytest.raises(LLMServerUnavailable, match="python -m llm.serve"):
         llm.wait_until_ready(max_wait_seconds=0)
+
+
+def _gemini_llm(handler, reasoning_effort="minimal") -> ChatLLM:
+
+    llm = ChatLLM(
+        base_url="https://gemini.test/v1beta/openai/",
+        served_name="gemini-3.5-flash-lite",
+        provider="gemini",
+        api_key="AQ.test-key",
+        reasoning_effort=reasoning_effort,
+        http_client=httpx.Client(transport=httpx.MockTransport(handler)),
+    )
+    # No real backoff sleeps in tests.
+    llm.client = llm.client.with_options(max_retries=0)
+    return llm
+
+
+def _model_list(*ids: str) -> httpx.Response:
+
+    return httpx.Response(200, json={"object": "list", "data": [
+        {"id": model_id, "object": "model", "created": 0, "owned_by": "google"} for model_id in ids
+    ]})
+
+
+def test_gemini_chat_sends_key_and_reasoning_effort_but_no_repetition_penalty():
+
+    captured = {}
+
+    def handler(request):
+        captured["auth"] = request.headers["authorization"]
+        captured["body"] = json.loads(request.content)
+        return _completion("好的")
+
+    _gemini_llm(handler).chat([{"role": "user", "content": "hi"}], SAMPLING)
+
+    body = captured["body"]
+    assert captured["auth"] == "Bearer AQ.test-key"
+    assert body["model"] == "gemini-3.5-flash-lite"
+    assert body["reasoning_effort"] == "minimal"
+    assert "repetition_penalty" not in body
+
+
+def test_gemini_wait_until_ready_accepts_models_prefix():
+
+    _gemini_llm(lambda request: _model_list("models/gemini-3.5-flash", "models/gemini-3.5-flash-lite")).wait_until_ready(0)
+
+
+def test_gemini_wait_until_ready_names_the_model_setting_when_unavailable():
+
+    with pytest.raises(LLMServerUnavailable, match="LLM_GEMINI_MODEL"):
+        _gemini_llm(lambda request: _model_list("models/gemini-3.5-flash")).wait_until_ready(0)
+
+
+def test_gemini_rejected_key_fails_fast_naming_the_key_setting():
+
+    def handler(request):
+        return httpx.Response(401, json={"error": {"code": 401, "message": "API key not valid", "status": "UNAUTHENTICATED"}})
+
+    with pytest.raises(LLMServerUnavailable, match="GEMINI_API_KEY"):
+        _gemini_llm(handler).wait_until_ready(max_wait_seconds=300)
+
+
+def test_gemini_rate_limit_becomes_a_friendly_error():
+
+    def handler(request):
+        return httpx.Response(429, json={"error": {"code": 429, "message": "quota", "status": "RESOURCE_EXHAUSTED"}})
+
+    with pytest.raises(LLMServerUnavailable, match="429"):
+        _gemini_llm(handler).chat([{"role": "user", "content": "hi"}], SAMPLING)
+
+
+def test_gemini_overload_becomes_a_friendly_error():
+
+    def handler(request):
+        return httpx.Response(503, json={"error": {"code": 503, "message": "high demand", "status": "UNAVAILABLE"}})
+
+    with pytest.raises(LLMServerUnavailable, match="LLM_GEMINI_MODEL"):
+        _gemini_llm(handler).chat([{"role": "user", "content": "hi"}], SAMPLING)
+
+
+def test_from_settings_picks_gemini_model_url_and_key():
+
+    settings = LLMClientSettings(
+        _env_file=None, llm_provider="gemini", llm_api_key="AQ.k",
+        llm_gemini_model="gemini-3.5-flash", llm_reasoning_effort="none",
+    )
+    llm = ChatLLM.from_settings(settings)
+
+    assert llm.provider == "gemini"
+    assert llm.served_name == "gemini-3.5-flash"
+    assert llm.reasoning_effort == "none"
+    assert str(llm.client.base_url).startswith("https://generativelanguage.googleapis.com/v1beta/openai")
+    assert llm.client.api_key == "AQ.k"
+
+
+def test_from_settings_defaults_to_local_vllm_server():
+
+    llm = ChatLLM.from_settings(LLMClientSettings(_env_file=None))
+
+    assert llm.provider == "vllm"
+    assert llm.served_name == "hotai-llm"
+    assert llm.client.api_key == "EMPTY"
 
 
 def test_leakage_is_zero_for_traditional_text_and_counts_simplified_chars():

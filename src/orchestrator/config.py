@@ -1,6 +1,6 @@
 # Orchestrator-side config: which remote A2A agents to discover at startup,
-# how each one's results should be relayed, and how to reach the shared LLM
-# server. Read once at import by OrchestratorSettings (pydantic-settings):
+# how each one's results should be relayed, and how to reach the LLM (the
+# shared local server or the Gemini API, see llm/settings.py). Read once at import by OrchestratorSettings (pydantic-settings):
 # real env vars > src/orchestrator/.env > defaults below, validated before
 # anything else runs -- a bad value fails at startup naming the field. See
 # .env.example next to this file for every setting.

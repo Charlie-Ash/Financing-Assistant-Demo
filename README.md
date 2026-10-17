@@ -11,6 +11,8 @@ A2ASystem is an orchestrator ("Secretary") that routes each user message to the 
 
 Each agent is its own long-running process, and the orchestrator talks to them over the network using the A2A protocol rather than calling them as local functions. All of them generate text through **one shared vLLM server** (see [Architecture](#architecture)).
 
+> **Branch `gemini-backend`:** this branch adds an option to have any agent generate text through **Google's Gemini API** instead of the local vLLM server, chosen per agent in its `.env`. `main` stays local-only. See [Using the Gemini API](#using-the-gemini-api).
+
 This repository is also the codebase behind an ongoing case-study research paper (submitted to **ICS2026**) on incrementally promoting a local multi-agent assistant onto a real networked agent protocol on constrained, single-GPU consumer hardware, and measuring what that promotion actually costs in latency, routing accuracy, and VRAM. See [Project evolution & branches](#project-evolution--branches) below.
 
 ## Architecture
@@ -201,6 +203,10 @@ A few things worth knowing:
 | Every agent | `LLM_BASE_URL` | `http://localhost:8000/v1` | Where the agent reaches the LLM server |
 | Every agent | `LLM_TIMEOUT_SECONDS` | `120` | Per-request timeout for LLM calls |
 | Every agent | `LLM_STARTUP_WAIT_SECONDS` | `300` | How long the agent waits at startup for the server to finish loading |
+| Every agent | `LLM_PROVIDER` | `vllm` | `vllm` (shared local server) or `gemini` (Google's API, see [Using the Gemini API](#using-the-gemini-api)) |
+| Every agent | `LLM_GEMINI_MODEL` | `gemini-3.5-flash-lite` | Gemini model id, used when `LLM_PROVIDER=gemini` |
+| Every agent | `LLM_REASONING_EFFORT` | `minimal` | Gemini thinking level (`none`/`minimal`/`low`/`medium`/`high`); keep it as low as the model accepts |
+| Every agent | `GEMINI_API_KEY` | (none) | Gemini API key; required when `LLM_PROVIDER=gemini`. Keep it in the git-ignored `.env`, never in `.env.example` |
 | RAG | `RAG_EMBEDDING_MODEL` | `BAAI/bge-m3` | Embedding model used to index and search documents |
 | RAG | `RAG_COLLECTION_NAME` | `my_docs` | Base Qdrant collection name; the embedding model is appended (`my_docs__bge-m3`), so switching models rebuilds the index |
 | RAG | `RAG_RERANKER_MODEL` | `BAAI/bge-reranker-v2-m3` | Cross-encoder that re-scores retrieved chunks |
@@ -234,6 +240,42 @@ python main.py
 Type `bye` in the orchestrator REPL to exit (you'll be asked whether to save a summarized memory of the session).
 
 Want to change a model, a port, or a GPU memory budget first? See [Configuration](#configuration) above.
+
+## Using the Gemini API
+
+Any agent can generate text through Google's Gemini API instead of the local vLLM server. Gemini's OpenAI-compatible endpoint is used, so it goes through the same `ChatLLM` client (`src/llm/client.py`); graphs, prompts, the A2A protocol and the OpenCC safety net are unchanged. RAG embeddings and reranking still run locally; only text generation moves.
+
+**Modes** (set `LLM_PROVIDER` in each agent's own `.env`):
+
+| Mode | Orchestrator | RAG | Actions | Local VRAM |
+|---|---|---|---|---|
+| All-Gemini | gemini | gemini | gemini | ~2.7 GiB (RAG models on CUDA), or 0 with `RAG_EMBED_DEVICE=cpu`. No `llm.serve` needed |
+| Hybrid | gemini | vllm | gemini | the vLLM server plus RAG models |
+| All-local (`main`) | vllm | vllm | vllm | ~28.7 GiB, see the VRAM budget above |
+
+**Setup:**
+1. Create an API key at [aistudio.google.com](https://aistudio.google.com) → *Get API key*. Current keys start with `AQ.`.
+2. In each agent's `.env` that should use Gemini (`src/orchestrator/.env`, `src/tools/ragTool/.env`, `src/tools/actionsTool/.env`), add:
+   ```
+   LLM_PROVIDER=gemini
+   GEMINI_API_KEY=AQ...
+   # optional, defaults shown in each .env.example:
+   # LLM_GEMINI_MODEL=gemini-3.5-flash-lite
+   # LLM_REASONING_EFFORT=minimal
+   ```
+3. Check the key and model: `python evals/check_gemini.py` (from the repo root). It makes 4 small requests: one chat, three routing decisions.
+4. Start the agents and `main.py` as in [Running the project](#running-the-project), skipping `python -m llm.serve` if no agent uses `vllm`.
+
+**Models** (tested 2026-10-17; use exact ids, not `-preview`/`-latest`):
+- `gemini-3.5-flash-lite` (default): needs `LLM_REASONING_EFFORT=minimal` (it rejects `none`).
+- `gemini-3.1-flash-lite`, `gemini-3.5-flash`: accept `none`. The RAG `.env.example` suggests `gemini-3.5-flash` for its answers.
+- Compare candidates with `python evals/run_routing_eval.py --label <model> --delay 5`.
+
+**Things to know:**
+- **Cost:** free tier within AI Studio's per-model limits. On the paid tier, a REPL turn (3–4 calls) costs roughly US$0.002–0.01. Thinking tokens are billed as output, which is why `LLM_REASONING_EFFORT` defaults low. Set a budget alert in Google Cloud Billing before enabling billing.
+- **Errors:** 429 means your quota or rate limit is used up. 503 means the model is overloaded on Google's side. Both are retried automatically, then reported with a clear message.
+- **Privacy:** prompts, chat history and retrieved document text are sent to Google. On the free tier Google may use them to improve its products. Use test or synthetic documents only.
+- **Settings and branches:** the Gemini settings use their own variable names, so a `.env` set up for Gemini is ignored on `main`, which keeps using the local server.
 
 ## Choosing the model (evals)
 
