@@ -11,6 +11,7 @@ from typing import TypedDict
 
 from schemas.tool_call import ToolCall
 from tools.base import ToolResult
+from tools.ragTool.rag.userQuery import RetrievedChunk
 
 
 class RAGSubgraphState(TypedDict):
@@ -21,8 +22,8 @@ class RAGSubgraphState(TypedDict):
     # Private: the query text pulled out of tool_call.args by extract_query.
     query: str
 
-    # Private: chunks returned by retrieve.
-    retrieved_chunks: list[str]
+    # Private: chunks returned by retrieve, each with its citation.
+    retrieved_chunks: list[RetrievedChunk]
 
     # Shared with OrchestratorState: read by the parent's generate_response node.
     tool_result: ToolResult

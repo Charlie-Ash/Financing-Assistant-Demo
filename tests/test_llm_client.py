@@ -12,7 +12,7 @@ from llm.profiles import MODEL_PROFILES
 from llm.sampling import SamplingConfig
 from llm.serve import build_serve_command
 from llm.settings import LLMClientSettings, LLMServerSettings
-from llm.text_norm import cjk_char_count, simplified_leakage_chars
+from llm.text_norm import cjk_char_count, simplified_leakage_chars, to_traditional
 
 SAMPLING = SamplingConfig(temperature=0.2, top_p=0.9, max_tokens=64, repetition_penalty=1.1)
 
@@ -220,6 +220,24 @@ def test_from_settings_defaults_to_local_vllm_server():
     assert llm.provider == "vllm"
     assert llm.served_name == "hotai-llm"
     assert llm.client.api_key == "EMPTY"
+
+
+def test_chars_mode_never_alters_valid_traditional_text():
+
+    # Official 動產擔保交易法 wording: s2twp would rewrite 占 -> 佔 and 致 -> 緻.
+    law_text = "債務人不履行契約或抵押物被出賣，致有害於抵押權之行使者，抵押權人得占有抵押物。"
+
+    assert to_traditional(law_text, "chars") == law_text
+    assert to_traditional(law_text) != law_text  # the default mode does alter it
+    assert to_traditional("动产担保交易法第17条", "chars") == "動產擔保交易法第17條"
+
+
+def test_traditional_mode_is_applied_to_replies():
+
+    llm = _chat_llm(lambda request: _completion("抵押權人得占有抵押物"))
+    llm.traditional_mode = "chars"
+
+    assert llm.chat([{"role": "user", "content": "hi"}], SAMPLING) == "抵押權人得占有抵押物"
 
 
 def test_leakage_is_zero_for_traditional_text_and_counts_simplified_chars():

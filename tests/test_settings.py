@@ -2,6 +2,8 @@
 # i.e. at process startup -- naming the offending field, instead of letting
 # a malformed value surface later somewhere deep inside vLLM or uvicorn.
 # _env_file=None keeps a developer's local .env out of these tests.
+from pathlib import Path
+
 import pytest
 from pydantic import ValidationError
 
@@ -20,6 +22,22 @@ def test_env_vars_are_read_and_coerced(monkeypatch):
 
     assert settings.rag_a2a_port == 9001
     assert settings.llm_base_url == "http://gpu-box:8000/v1"
+
+
+def test_rag_data_dir_is_read_as_a_path(monkeypatch):
+
+    monkeypatch.setenv("RAG_DATA_DIR", "data/other_docs")
+
+    settings = RagSettings(_env_file=None)
+
+    assert settings.rag_data_dir == Path("data/other_docs")
+
+
+def test_only_the_regulation_agent_defaults_to_the_character_only_safety_net():
+
+    assert RagSettings(_env_file=None).llm_traditional_mode == "chars"
+    assert OrchestratorSettings(_env_file=None).llm_traditional_mode == "s2twp"
+    assert ActionsSettings(_env_file=None).llm_traditional_mode == "s2twp"
 
 
 def test_non_integer_port_fails_naming_the_field(monkeypatch):

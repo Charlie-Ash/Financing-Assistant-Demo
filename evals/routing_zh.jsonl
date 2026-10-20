@@ -1,18 +1,18 @@
-{"id": "rag-01", "category": "clear-rag", "question": "彼特的祖父叫什麼名字？", "expected": "rag"}
-{"id": "rag-02", "category": "clear-rag", "question": "彼特十四歲生日收到了什麼禮物？", "expected": "rag"}
-{"id": "rag-03", "category": "clear-rag", "question": "彼特讀的是哪一所大學？", "expected": "rag"}
-{"id": "rag-04", "category": "clear-rag", "question": "彼特在大學主修什麼？", "expected": "rag"}
-{"id": "rag-05", "category": "clear-rag", "question": "彼特畢業後在哪家公司工作？", "expected": "rag"}
-{"id": "rag-06", "category": "clear-rag", "question": "暴風雨期間，彼特連續協調搶修了幾個小時？", "expected": "rag"}
-{"id": "rag-07", "category": "clear-rag", "question": "彼特學過哪些樂器？", "expected": "rag"}
-{"id": "rag-08", "category": "clear-rag", "question": "彼特回到梅羅灣後買了什麼？", "expected": "rag"}
-{"id": "rag-09", "category": "clear-rag", "question": "彼特喜歡拍攝哪一類的地點？", "expected": "rag"}
-{"id": "rag-10", "category": "clear-rag", "question": "彼特每天早上幾點起床？起床後第一件事做什麼？", "expected": "rag"}
+{"id": "rag-01", "category": "clear-rag", "question": "提前清償貸款要付違約金嗎？怎麼計算？", "expected": "rag"}
+{"id": "rag-02", "category": "clear-rag", "question": "動產擔保交易法對附條件買賣有什麼規定？", "expected": "rag"}
+{"id": "rag-03", "category": "clear-rag", "question": "個資法規定蒐集客戶個人資料時要告知哪些事項？", "expected": "rag"}
+{"id": "rag-04", "category": "clear-rag", "question": "消保法對定型化契約的審閱期有什麼規定？", "expected": "rag"}
+{"id": "rag-05", "category": "clear-rag", "question": "申請車貸需要準備哪些文件？", "expected": "rag"}
+{"id": "rag-06", "category": "clear-rag", "question": "客戶逾期幾天後可以開始電話催收？", "expected": "rag"}
+{"id": "rag-07", "category": "clear-rag", "question": "洗錢防制法所稱的洗錢行為包括哪些？", "expected": "rag"}
+{"id": "rag-08", "category": "clear-rag", "question": "動產抵押的標的物被債務人出賣時，債權人可以怎麼做？", "expected": "rag"}
+{"id": "rag-09", "category": "clear-rag", "question": "公司規定業務人員可以查詢客戶的哪些資料？", "expected": "rag"}
+{"id": "rag-10", "category": "clear-rag", "question": "分期付款買賣契約依消保法應該載明哪些事項？", "expected": "rag"}
 {"id": "act-01", "category": "clear-actions", "question": "請幫我存一則筆記，提醒我明天早上打電話給牙醫。", "expected": "actions"}
 {"id": "act-02", "category": "clear-actions", "question": "記下來：團隊會議改到星期四下午三點。", "expected": "actions"}
 {"id": "act-03", "category": "clear-actions", "question": "做個筆記：今天下班後去買菜，牛奶、雞蛋和麵包。", "expected": "actions"}
 {"id": "act-04", "category": "clear-actions", "question": "把這個存成筆記：記得星期五前交季報。", "expected": "actions"}
-{"id": "act-05", "category": "clear-actions", "question": "幫我記下彼特最喜歡的嗜好是修復古董錶，我之後要參考。", "expected": "actions"}
+{"id": "act-05", "category": "clear-actions", "question": "幫我記下：客戶陳小姐偏好下午三點後再聯繫。", "expected": "actions"}
 {"id": "act-06", "category": "clear-actions", "question": "寫個提醒：每週二和週五要澆花。", "expected": "actions"}
 {"id": "act-07", "category": "clear-actions", "question": "幫我記錄會議內容：討論了預算刪減，後續步驟待核准。", "expected": "actions"}
 {"id": "act-08", "category": "clear-actions", "question": "請建立一則標題為購物清單的筆記，內容有白米、雞肉、菠菜。", "expected": "actions"}
@@ -28,13 +28,13 @@
 {"id": "def-08", "category": "clear-default", "question": "你最喜歡什麼顏色？", "expected": "default"}
 {"id": "def-09", "category": "clear-default", "question": "可以推薦一部好看的科幻電影嗎？", "expected": "default"}
 {"id": "def-10", "category": "clear-default", "question": "今天天氣如何？", "expected": "default"}
-{"id": "amb-01", "category": "ambiguous", "question": "跟我說說彼特這個人。", "expected": "rag", "note": "rag vs default: vague, but about the document's subject"}
-{"id": "amb-02", "category": "ambiguous", "question": "可以幫我存下彼特最喜歡的科目是數學、物理和文學嗎？", "expected": "actions", "note": "document content wrapped in an explicit save request"}
-{"id": "amb-03", "category": "ambiguous", "question": "從彼特的故事中我應該學到什麼？", "expected": "rag", "note": "rag vs default: reflective, but document-grounded"}
-{"id": "amb-04", "category": "ambiguous", "question": "提醒我一下彼特的父母是做什麼工作的。", "expected": "rag", "note": "'remind me' sounds like an action, but it's a factual document question"}
-{"id": "amb-05", "category": "ambiguous", "question": "寫一則短筆記，關於彼特一生最重視的事。", "expected": "actions", "note": "document content wrapped in an explicit 'write a note'"}
-{"id": "amb-06", "category": "ambiguous", "question": "我想記住彼特的晨間習慣，可以幫我記下來嗎？", "expected": "actions", "note": "document content plus explicit 'jot it down'"}
-{"id": "amb-07", "category": "ambiguous", "question": "記下我覺得這份文件很有啟發性。", "expected": "actions", "note": "actions vs default: personal opinion, but explicit 'note'"}
-{"id": "amb-08", "category": "ambiguous", "question": "這份文件裡有什麼值得記住的內容嗎？", "expected": "rag", "note": "rag vs actions: 'remembering' wording, but really a document-summary request"}
-{"id": "amb-09", "category": "ambiguous", "question": "可以幫我多了解一下這裡描述的這個人嗎？", "expected": "rag", "note": "rag vs default: vague, but references the document's subject"}
-{"id": "amb-10", "category": "ambiguous", "question": "存一個提醒，下次要問問彼特的職業生涯。", "expected": "actions", "note": "actions vs rag: the actionable part is the deferred save/reminder"}
+{"id": "amb-01", "category": "ambiguous", "question": "跟我說說個資法。", "expected": "rag", "note": "rag vs default: vague, but asks about a law in the corpus"}
+{"id": "amb-02", "category": "ambiguous", "question": "幫我存一則筆記：提前清償滿兩年免收違約金。", "expected": "actions", "note": "regulation content wrapped in an explicit save request"}
+{"id": "amb-03", "category": "ambiguous", "question": "為什麼要有消費者保護法？", "expected": "rag", "note": "rag vs default: general-sounding, but answered by the law's own purpose article"}
+{"id": "amb-04", "category": "ambiguous", "question": "提醒我一下逾期多久可以移送法務。", "expected": "rag", "note": "'remind me' sounds like an action, but it's a factual policy question"}
+{"id": "amb-05", "category": "ambiguous", "question": "寫一則短筆記，摘要洗錢防制法的重點。", "expected": "actions", "note": "regulation content wrapped in an explicit 'write a note'"}
+{"id": "amb-06", "category": "ambiguous", "question": "我想記住車貸要準備的文件，可以幫我記下來嗎？", "expected": "actions", "note": "policy content plus explicit 'jot it down'"}
+{"id": "amb-07", "category": "ambiguous", "question": "記下我覺得這次的法規查詢很有幫助。", "expected": "actions", "note": "actions vs default: personal opinion, but explicit 'note'"}
+{"id": "amb-08", "category": "ambiguous", "question": "個資法裡有什麼業務人員一定要記住的規定嗎？", "expected": "rag", "note": "rag vs actions: 'remembering' wording, but really a regulation question"}
+{"id": "amb-09", "category": "ambiguous", "question": "可以幫我多了解一下動產擔保是什麼嗎？", "expected": "rag", "note": "rag vs default: vague, but the term is defined in the corpus"}
+{"id": "amb-10", "category": "ambiguous", "question": "存一個提醒，下次要確認個資法修正條文的施行日期。", "expected": "actions", "note": "actions vs rag: the actionable part is the deferred save/reminder"}

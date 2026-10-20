@@ -14,7 +14,7 @@ from tools.actionsTool.actions import graph as actions_graph
 from tools.actionsTool.actions.graph import build_actions_subgraph
 from tools.actionsTool.actions.note_schema import NOTE_SCHEMA
 from tools.ragTool.config import RERANK_TOP_N, RETRIEVE_TOP_K
-from tools.ragTool.rag.graph import build_rag_subgraph
+from tools.ragTool.rag.graph import DISCLAIMER, build_rag_subgraph
 
 from fake_dependencies import FakeChatLLM
 
@@ -24,6 +24,15 @@ SAMPLING = SamplingConfig(temperature=0.0, top_p=1.0, max_tokens=64)
 @dataclass
 class _FakeNode:
     text: str
+    metadata: dict
+
+
+def _law_metadata(article: int) -> dict:
+    return {
+        "source_type": "law", "doc_title": "消費者保護法", "article_no": f"第 {article} 條",
+        "heading": "第 二 章 消費者權益", "modified_date": "2015-06-17", "effective_note": "",
+        "url": f"https://law.moj.gov.tw/LawClass/LawSingle.aspx?pcode=J0170001&flno={article}",
+    }
 
 
 class _FakeIndex:
@@ -38,7 +47,7 @@ class _FakeIndex:
 
         class _Retriever:
             def retrieve(self, query):
-                return [_FakeNode(f"chunk-{i}") for i in range(index.requested_top_k)]
+                return [_FakeNode(f"chunk-{i}", _law_metadata(i)) for i in range(index.requested_top_k)]
 
         return _Retriever()
 
@@ -67,12 +76,23 @@ def test_rag_reranks_wide_retrieval_and_relays_answer_verbatim():
 
     assert index.requested_top_k == RETRIEVE_TOP_K
     assert reranker.query_str == "違約金怎麼算？"
-    assert result["tool_result"] == {"output": "提前還款違約金為剩餘本金的 1%。", "relay_verbatim": True}
+    assert result["tool_result"]["relay_verbatim"] is True
 
+    # Reranked order, each chunk labelled with its citation and date context.
     prompt = llm.calls[0]["messages"][0]["content"]
     last = RETRIEVE_TOP_K - 1
-    assert f"相關資料 1:\nchunk-{last}" in prompt and f"相關資料 2:\nchunk-{last - 1}" in prompt
+    assert f"【來源 1】《消費者保護法》第 {last} 條（第 二 章 消費者權益；修正日期 2015-06-17）\nchunk-{last}" in prompt
+    assert f"【來源 2】《消費者保護法》第 {last - 1} 條" in prompt
     assert "chunk-0" not in prompt
+
+    # The answer, then a code-built source list with links, then the disclaimer.
+    output = result["tool_result"]["output"]
+    assert output.startswith("提前還款違約金為剩餘本金的 1%。\n\n參考來源：\n")
+    assert (
+        f"- 《消費者保護法》第 {last} 條（第 二 章 消費者權益；修正日期 2015-06-17） "
+        f"https://law.moj.gov.tw/LawClass/LawSingle.aspx?pcode=J0170001&flno={last}"
+    ) in output
+    assert output.endswith(DISCLAIMER)
     assert ZH_TW_REPLY_INSTRUCTION in prompt
     assert llm.calls[0]["json_schema"] is None
 
