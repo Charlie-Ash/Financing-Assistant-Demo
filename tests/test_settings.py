@@ -9,7 +9,7 @@ from pydantic import ValidationError
 
 from llm.settings import LLMServerSettings
 from orchestrator.config import OrchestratorSettings
-from tools.actionsTool.config import ActionsSettings
+from tools.creditLookupTool.config import CreditLookupSettings
 from tools.ragTool.config import RagSettings
 
 
@@ -37,15 +37,15 @@ def test_only_the_regulation_agent_defaults_to_the_character_only_safety_net():
 
     assert RagSettings(_env_file=None).llm_traditional_mode == "chars"
     assert OrchestratorSettings(_env_file=None).llm_traditional_mode == "s2twp"
-    assert ActionsSettings(_env_file=None).llm_traditional_mode == "s2twp"
+    assert CreditLookupSettings(_env_file=None).llm_traditional_mode == "s2twp"
 
 
 def test_non_integer_port_fails_naming_the_field(monkeypatch):
 
-    monkeypatch.setenv("ACTIONS_A2A_PORT", "notaport")
+    monkeypatch.setenv("CREDIT_LOOKUP_A2A_PORT", "notaport")
 
-    with pytest.raises(ValidationError, match="actions_a2a_port"):
-        ActionsSettings(_env_file=None)
+    with pytest.raises(ValidationError, match="credit_lookup_a2a_port"):
+        CreditLookupSettings(_env_file=None)
 
 
 def test_out_of_range_gpu_fraction_fails_naming_the_field(monkeypatch):
@@ -93,7 +93,7 @@ def test_gemini_api_key_env_var_is_read_and_kept_secret(monkeypatch):
     monkeypatch.setenv("LLM_PROVIDER", "gemini")
     monkeypatch.setenv("GEMINI_API_KEY", "AQ.secret-value")
 
-    settings = ActionsSettings(_env_file=None)
+    settings = CreditLookupSettings(_env_file=None)
 
     assert settings.llm_api_key.get_secret_value() == "AQ.secret-value"
     assert "AQ.secret-value" not in repr(settings)

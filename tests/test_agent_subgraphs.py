@@ -1,18 +1,13 @@
-# Runs the REAL RAG and Actions subgraphs (not the fake stand-ins the A2A
-# tests use), with FakeChatLLM in place of the shared LLM server and small
-# fakes for the vector index / reranker / note writer -- so the node logic
-# itself (prompt building, reranking, JSON parsing, error paths) is covered
-# GPU-free.
+# Runs the REAL RAG subgraph (not the fake stand-in the A2A tests use), with
+# FakeChatLLM in place of the shared LLM server and small fakes for the
+# vector index / reranker -- so the node logic itself (prompt building,
+# reranking, citations, error paths) is covered GPU-free. The real Credit
+# Lookup subgraph is covered in test_credit_lookup_agent.py.
 from dataclasses import dataclass
-
-from langchain_core.messages import AIMessage, HumanMessage
 
 from llm.sampling import SamplingConfig
 from llm.text_norm import ZH_TW_REPLY_INSTRUCTION
 from schemas.tool_call import ToolCall
-from tools.actionsTool.actions import graph as actions_graph
-from tools.actionsTool.actions.graph import build_actions_subgraph
-from tools.actionsTool.actions.note_schema import NOTE_SCHEMA
 from tools.ragTool.config import RERANK_TOP_N, RETRIEVE_TOP_K
 from tools.ragTool.rag.graph import DISCLAIMER, build_rag_subgraph
 
@@ -128,42 +123,3 @@ def test_rag_empty_query_short_circuits_without_calling_llm():
 
     assert "no query" in result["tool_result"]["output"]
     assert llm.calls == []
-
-
-def test_actions_generates_note_with_schema_and_history(monkeypatch):
-
-    saved = {}
-
-    def fake_save_note(content, file_name):
-        saved.update(content=content, file_name=file_name)
-        return f"/notes/{file_name}_notes.txt"
-
-    monkeypatch.setattr(actions_graph, "save_note", fake_save_note)
-
-    llm = FakeChatLLM('{"content": "王先生下週二簽約", "file_name": "wang_contract"}')
-    state = {
-        "tool_call": ToolCall(tool="actions", action="run", args={"request": "記下來"}),
-        "messages": [HumanMessage("王先生何時簽約？"), AIMessage("下週二。"), HumanMessage("記下來")],
-    }
-
-    result = build_actions_subgraph(llm, SAMPLING).invoke(state)
-
-    assert saved == {"content": "王先生下週二簽約", "file_name": "wang_contract"}
-    assert result["tool_result"] == {"output": "Note saved to /notes/wang_contract_notes.txt.", "relay_verbatim": False}
-
-    call = llm.calls[0]
-    assert call["json_schema"] == NOTE_SCHEMA
-    roles = [m["role"] for m in call["messages"]]
-    assert roles == ["system", "user", "assistant", "user"]
-    assert call["messages"][-1]["content"] == "記下來"
-
-
-def test_actions_invalid_json_skips_saving(monkeypatch):
-
-    monkeypatch.setattr(actions_graph, "save_note", lambda *a: (_ for _ in ()).throw(AssertionError("must not save")))
-
-    state = {"tool_call": ToolCall(tool="actions", action="run", args={"request": "記下來"}), "messages": []}
-
-    result = build_actions_subgraph(FakeChatLLM("not json"), SAMPLING).invoke(state)
-
-    assert "generation failed" in result["tool_result"]["output"]

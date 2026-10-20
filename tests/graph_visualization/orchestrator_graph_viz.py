@@ -7,10 +7,10 @@
 # It's meant to be run manually, on demand, whenever you want to eyeball the
 # graph's current shape.
 #
-# Since the A2A rework (orchestrator/pipeline/graph.py's run_rag_tool/run_actions_tool
+# Since the A2A rework (orchestrator/pipeline/graph.py's run_rag_tool/run_credit_lookup_tool
 # are now real network calls, not nested LangGraph subgraphs -- see
 # orchestrator/agents/remote_agent.py), there's no more internal structure to expand
-# into via xray=True: RAG's/Actions' own extract->generate->... nodes now
+# into via xray=True: RAG's/Credit Lookup's own extract->... nodes now
 # live inside their own standalone agent processes, invisible from the
 # orchestrator's own graph. So this only draws the orchestrator's top-level
 # shape now, not a merged diagram of all three graphs.

@@ -47,8 +47,8 @@ def build_graph(llm: "OrchestratorLLM", tool_router: "ToolRouter", checkpointer=
     graph = StateGraph(OrchestratorState)
 
     # Node 1: ask the LLM which tool to use and record it. No more per-tool
-    # arg-injection rules here (there used to be one for "rag" and one for
-    # "actions") -- now that RAG/Actions are real A2A calls, the plain user
+    # arg-injection rules here (there used to be one per agent) -- now that
+    # RAG/Credit Lookup are real A2A calls, the plain user
     # message text *is* the whole interface (the remote executors read it
     # straight off the A2A message, ignoring tool_call.args entirely -- see
     # run_remote_tool below), so there's nothing left for those rules to do.
@@ -109,7 +109,7 @@ def build_graph(llm: "OrchestratorLLM", tool_router: "ToolRouter", checkpointer=
             # before this one" contract as generate_response's own slicing;
             # state["user_message"] is sent separately as the current turn.
             history_messages = state["messages"][:-1]
-            tool_result = await call_remote_agent(agent, state["user_message"], history_messages)
+            tool_result = await call_remote_agent(agent, state["user_message"], history_messages, state.get("caller"))
             return {"tool_result": tool_result}
 
         return run_remote_tool
@@ -119,7 +119,7 @@ def build_graph(llm: "OrchestratorLLM", tool_router: "ToolRouter", checkpointer=
     graph.add_edge("run_default_tool", "generate_response")
 
     # One node/edge pair per discovered remote agent, instead of a fixed
-    # "run_rag_tool"/"run_actions_tool" pair -- however many entries
+    # "run_rag_tool"/"run_credit_lookup_tool" pair -- however many entries
     # tool_router.remote_agents ends up with (per orchestrator/config.py's
     # REMOTE_AGENTS), that's how many branches this graph gets. This is the
     # actual fix for ToolRouter/graph.py no longer being allowed to look like

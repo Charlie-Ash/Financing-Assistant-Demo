@@ -36,15 +36,15 @@ class OrchestratorSettings(LLMClientSettings):
 
     # "name@url,name@url,..." -- adding/removing an agent is a one-line
     # .env edit, not a code change. Matches the ports the standalone servers
-    # default to (RAG_A2A_PORT=8001, ACTIONS_A2A_PORT=8002) -- "localhost"
+    # default to (RAG_A2A_PORT=8001, CREDIT_LOOKUP_A2A_PORT=8002) -- "localhost"
     # here on purpose, not "0.0.0.0": that's a bind address for the servers,
     # not something a client should connect to.
-    remote_agents: str = "rag@http://localhost:8001,actions@http://localhost:8002"
+    remote_agents: str = "rag@http://localhost:8001,credit_lookup@http://localhost:8002"
 
     # Comma-separated agent names whose successful results are relayed
     # verbatim. Anyone not listed is composed into a reply, the safer
     # default for an agent whose output style isn't known in advance.
-    remote_agents_verbatim: str = "rag"
+    remote_agents_verbatim: str = "rag,credit_lookup"
 
     # Where the persistent LangGraph checkpointer (AsyncSqliteSaver, see
     # orchestrator.py) writes conversation state, so it survives an
@@ -54,7 +54,7 @@ class OrchestratorSettings(LLMClientSettings):
 
     # How long the orchestrator's A2A client waits for a remote agent's
     # response before reporting an error ToolResult, instead of httpx's
-    # stock 5s -- a RAG/Actions turn does retrieval plus LLM calls, which
+    # stock 5s -- a RAG/Credit Lookup turn does retrieval plus LLM calls, which
     # comfortably exceeds 5s (see 2026-08-26 findings).
     remote_agent_timeout_seconds: float = Field(default=180.0, gt=0)
 

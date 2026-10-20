@@ -1,7 +1,7 @@
 # The orchestrator's actual A2A *client* plumbing: discovering a remote
 # agent's AgentCard at startup, and sending it a turn's worth of user text
 # over the real a2a-sdk client stack. This is what replaces
-# ToolRouter's old in-process RAGTool()/ActionsTool() subgraph calls.
+# ToolRouter's old in-process tool subgraph calls.
 import logging
 from dataclasses import dataclass
 
@@ -88,7 +88,7 @@ def _extract_text(parts) -> str:
 # Sends one turn's worth of plain text to a remote agent over A2A and turns
 # whatever comes back into this project's own ToolResult shape (see
 # tools/base.py), so the rest of orchestrator/pipeline/graph.py doesn't need to know
-# the call crossed a network boundary at all. Both RAG's and Actions'
+# the call crossed a network boundary at all. Both RAG's and Credit Lookup's
 # servers advertise capabilities.streaming=False, so send_message() always
 # yields exactly one item: either a (Task, None) pair or a bare Message.
 #
@@ -97,14 +97,22 @@ def _extract_text(parts) -> str:
 # field when given -- explicit payload, not a shared Python object, so it
 # survives crossing a real process boundary. create_text_message_object only
 # accepts role/content, so metadata has to be set by mutating the returned
-# Message afterward. Every remote agent gets this regardless of whether it
-# actually reads it (RAGAgentExecutor doesn't, ActionsAgentExecutor does) --
+# Message afterward. The caller ({"user_id", "role"}, see main.py) rides
+# along the same way. Every remote agent gets both regardless of whether it
+# reads them (RAGAgentExecutor doesn't, CreditLookupAgentExecutor does) --
 # call_remote_agent doesn't know or care which agent it's talking to.
-async def call_remote_agent(agent: RemoteAgent, text: str, history_messages: list | None = None) -> ToolResult:
+async def call_remote_agent(
+    agent: RemoteAgent, text: str, history_messages: list | None = None, caller: dict | None = None,
+) -> ToolResult:
 
     message = create_text_message_object(content=text)
+    metadata = {}
     if history_messages:
-        message.metadata = {"history": history_to_chat_messages(history_messages)}
+        metadata["history"] = history_to_chat_messages(history_messages)
+    if caller:
+        metadata["caller"] = caller
+    if metadata:
+        message.metadata = metadata
 
     try:
         async for event in agent.client.send_message(message):

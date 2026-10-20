@@ -24,13 +24,13 @@ from orchestrator.agents.tool_router import DEFAULT_TOOL_DESCRIPTION, describe_a
 from orchestrator.config import OrchestratorSettings
 from orchestrator.pipeline.llm import OrchestratorLLM
 from schemas.tool_schema import build_tool_schema
-from tools.actionsTool.a2a.a2a_server import build_agent_card as build_actions_agent_card
+from tools.creditLookupTool.a2a.a2a_server import build_agent_card as build_credit_lookup_agent_card
 from tools.ragTool.a2a.a2a_server import build_agent_card as build_rag_agent_card
 
 ROUTING_PROMPTS = [
     ("你好，今天可以幫我做什麼？", "default"),
-    ("彼特的祖父叫什麼名字？", "rag"),
-    ("幫我記下剛才的答案", "actions"),
+    ("提前清償要付違約金嗎？", "rag"),
+    ("王大明有沒有逾期紀錄？", "credit_lookup"),
 ]
 
 
@@ -64,7 +64,7 @@ def main():
     tool_descriptions = [
         DEFAULT_TOOL_DESCRIPTION,
         describe_agent_card("rag", build_rag_agent_card("localhost", 0)),
-        describe_agent_card("actions", build_actions_agent_card("localhost", 0)),
+        describe_agent_card("credit_lookup", build_credit_lookup_agent_card("localhost", 0)),
     ]
     llm = OrchestratorLLM(build_tool_schema([tool["name"] for tool in tool_descriptions]), chat_llm=chat_llm)
 

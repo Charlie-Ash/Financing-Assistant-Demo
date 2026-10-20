@@ -29,7 +29,7 @@ def build_checkpoint_serializer() -> JsonPlusSerializer:
 
 class Orchestrator():
 
-    def __init__(self, tool_router: ToolRouter, llm: OrchestratorLLM, graph, thread_id: str, exit_stack: AsyncExitStack):
+    def __init__(self, tool_router: ToolRouter, llm: OrchestratorLLM, graph, thread_id: str, exit_stack: AsyncExitStack, caller: dict):
 
         self.tool_router = tool_router
         self.llm = llm
@@ -50,13 +50,18 @@ class Orchestrator():
         # with` block.
         self._exit_stack = exit_stack
 
+        # Who this session acts as ({"user_id", "role"}, from main.py's
+        # --user/--role). Sent with every turn; the Credit Lookup agent
+        # decides what customer data to return from it.
+        self.caller = caller
+
     # Async factory replacing what used to be all of __init__: ToolRouter.discover()
     # has to make real network calls (fetching each remote agent's AgentCard),
     # so building an Orchestrator is no longer a synchronous operation. This
     # is the only place ToolRouter/OrchestratorLLM/the graph get constructed --
     # __init__ above just wires already-built pieces together.
     @classmethod
-    async def create(cls) -> "Orchestrator":
+    async def create(cls, caller: dict) -> "Orchestrator":
 
         tool_router = ToolRouter()
         await tool_router.discover()
@@ -90,7 +95,7 @@ class Orchestrator():
         # instead of being written out inline here.
         graph = build_graph(llm, tool_router, checkpointer=checkpointer)
 
-        return cls(tool_router, llm, graph, thread_id, exit_stack)
+        return cls(tool_router, llm, graph, thread_id, exit_stack, caller)
 
     # Runs one full turn through the graph built above and returns the final
     # reply text. Everything this used to do step-by-step -- tool decision,
@@ -106,7 +111,7 @@ class Orchestrator():
         # module-level `orchestrator.config` import above within this
         # function's scope.
         invoke_config = {"configurable": {"thread_id": self.thread_id}}
-        result = await self.graph.ainvoke({"user_message": user_message}, config=invoke_config)
+        result = await self.graph.ainvoke({"user_message": user_message, "caller": self.caller}, config=invoke_config)
         return result["final_response"]
 
     # Called from main.py's "bye" flow once the user has answered the save prompt.

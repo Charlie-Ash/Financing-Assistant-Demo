@@ -1,3 +1,4 @@
+import argparse
 import asyncio
 
 from orchestrator.orchestrator import Orchestrator
@@ -5,14 +6,35 @@ from orchestrator.orchestrator import Orchestrator
 # Secretary system main contact interface
 # Can change this up to a proper interface in the future
 
+# Demo-level identity: the role is self-declared here and enforced by the
+# Credit Lookup agent (see tools/creditLookupTool/credit_lookup/policy.py).
+# A real login would replace these flags without changing anything else.
+ROLE_LABELS = {"sales": "業務", "credit": "授信"}
+
+
+def parse_args() -> argparse.Namespace:
+
+    parser = argparse.ArgumentParser(description="Orchestrator REPL.")
+    parser.add_argument("--user", default="demo", help="user id recorded in the credit lookup audit log")
+    parser.add_argument(
+        "--role", choices=sorted(ROLE_LABELS), default="sales",
+        help="sales sees contract status only; credit also sees balances, payment detail and risk notes",
+    )
+    return parser.parse_args()
+
+
 async def main():
+
+    args = parse_args()
+    caller = {"user_id": args.user, "role": args.role}
 
     # Orchestrator.create() discovers remote A2A agents over the network
     # (see tool_router.py/remote_agent.py), which is why construction is now
     # async instead of a plain Orchestrator() call.
-    orchestrator = await Orchestrator.create()
+    orchestrator = await Orchestrator.create(caller)
 
     print("Welcome to the Agent-agent system!")  # Change this into something else in the future, maybe.
+    print(f"Signed in as {args.user} ({ROLE_LABELS[args.role]} / {args.role}).")
 
     while True:
 

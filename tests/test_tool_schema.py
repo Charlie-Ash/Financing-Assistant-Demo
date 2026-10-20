@@ -7,9 +7,9 @@ from schemas.tool_schema import build_tool_schema
 
 def test_tool_schema_constrains_tool_and_action_with_enum():
 
-    schema = build_tool_schema(["default", "rag", "actions"])
+    schema = build_tool_schema(["default", "rag", "credit_lookup"])
 
-    assert schema["properties"]["tool"]["enum"] == ["default", "rag", "actions"]
+    assert schema["properties"]["tool"]["enum"] == ["default", "rag", "credit_lookup"]
     assert schema["properties"]["action"]["enum"] == ["run"]
     assert schema["properties"]["action"]["const"] == "run"
 

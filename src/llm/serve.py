@@ -5,7 +5,7 @@
 #   python -m llm.serve --profile qwen3-8b-fp8   # one-off override, e.g. for evals
 #   python -m llm.serve --dry-run                # print the vllm command only
 #
-# Then start the RAG/Actions A2A servers and main.py in any order -- each
+# Then start the RAG/Credit Lookup A2A servers and main.py in any order -- each
 # waits for this server to finish loading (llm/client.ChatLLM.wait_until_ready).
 import argparse
 import os

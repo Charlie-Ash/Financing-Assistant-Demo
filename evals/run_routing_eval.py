@@ -6,7 +6,7 @@
 #
 # Repeat per candidate by restarting the server with another profile
 # (`python -m llm.serve --profile qwen3-8b-fp8` from src/) -- nothing else
-# needs restarting, and no RAG/Actions servers are needed at all: the
+# needs restarting, and no RAG/Credit Lookup servers are needed at all: the
 # routing prompt is built from their agent cards locally.
 #
 # With LLM_PROVIDER=gemini in src/orchestrator/.env no server is needed;
@@ -41,7 +41,7 @@ from orchestrator.agents.tool_router import DEFAULT_TOOL_DESCRIPTION, describe_a
 from orchestrator.pipeline.llm import OrchestratorLLM
 from schemas.tool_call import ToolCall
 from schemas.tool_schema import build_tool_schema
-from tools.actionsTool.a2a.a2a_server import build_agent_card as build_actions_agent_card
+from tools.creditLookupTool.a2a.a2a_server import build_agent_card as build_credit_lookup_agent_card
 from tools.ragTool.a2a.a2a_server import build_agent_card as build_rag_agent_card
 
 EVALS_DIR = Path(__file__).resolve().parent
@@ -69,7 +69,7 @@ def main():
     tool_descriptions = [
         DEFAULT_TOOL_DESCRIPTION,
         describe_agent_card("rag", build_rag_agent_card("localhost", 0)),
-        describe_agent_card("actions", build_actions_agent_card("localhost", 0)),
+        describe_agent_card("credit_lookup", build_credit_lookup_agent_card("localhost", 0)),
     ]
     tool_schema = build_tool_schema([tool["name"] for tool in tool_descriptions])
 

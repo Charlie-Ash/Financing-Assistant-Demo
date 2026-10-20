@@ -26,13 +26,13 @@ def test_verbatim_result_is_returned_unchanged_without_an_llm_call():
 
 def test_non_verbatim_result_is_composed_by_the_llm():
 
-    chat = FakeChatLLM("  已幫您記下。  ")
+    chat = FakeChatLLM("  抱歉，目前無法確認您的身分，無法提供客戶資料。  ")
     llm = OrchestratorLLM(tool_schema={}, chat_llm=chat)
 
     reply = llm.generate_response(
-        "幫我記下", [], ToolCall(tool="actions", action="run", args={}),
-        {"output": "Note saved.", "relay_verbatim": False},
+        "王大明有沒有逾期？", [], ToolCall(tool="credit_lookup", action="run", args={}),
+        {"output": "無法確認查詢者的身分或權限。", "relay_verbatim": False},
     )
 
-    assert reply == "已幫您記下。"
-    assert "Note saved." in chat.calls[0]["messages"][0]["content"]
+    assert reply == "抱歉，目前無法確認您的身分，無法提供客戶資料。"
+    assert "無法確認查詢者的身分或權限。" in chat.calls[0]["messages"][0]["content"]

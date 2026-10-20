@@ -18,6 +18,12 @@ class OrchestratorState(TypedDict):
     # The raw text the user typed this turn.
     user_message: str
 
+    # Who is asking: {"user_id": ..., "role": "sales" | "credit"}, set per
+    # turn by Orchestrator.run_orchestrator and forwarded to every remote
+    # agent (see remote_agent.call_remote_agent) -- the Credit Lookup agent
+    # filters customer data by this role.
+    caller: dict
+
     # Set by the "decide_tool" node: which tool to run and with what args.
     tool_call: ToolCall
 
