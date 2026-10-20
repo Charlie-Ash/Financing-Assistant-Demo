@@ -124,3 +124,65 @@ def test_long_article_splits_into_pieces_that_keep_their_citation(tmp_path):
     assert len(chunks) > 1
     assert {c.metadata["article_no"] for c in chunks} == {"第 3 條"}
     assert all("url" in c.excluded_embed_metadata_keys for c in chunks)
+
+
+# --- 參考來源: only the retrieved sources the answer actually cites ---
+
+from tools.ragTool.rag.graph import NO_SOURCES_CITED, cited_articles, format_sources
+from tools.ragTool.rag.userQuery import RetrievedChunk
+
+POLICY = "【示範用虛構文件】提前清償作業規範"
+
+
+def _law_chunk(article_no: str, title: str = "消費者保護法") -> RetrievedChunk:
+    return RetrievedChunk("…", f"《{title}》{article_no}", "修正日期 2015-06-17", "", title, article_no)
+
+
+def _policy_chunk(article_no: str) -> RetrievedChunk:
+    return RetrievedChunk("…", f"《{POLICY}》{article_no}", "第2版", "v2.md", POLICY, article_no)
+
+
+def test_only_cited_sources_are_listed():
+
+    chunks = [_policy_chunk("第2條"), _policy_chunk("第5條"), _policy_chunk("第1條")]
+    answer = f"十二個月內按 2% 收取《{POLICY}》第 2 條。"
+
+    sources = format_sources(chunks, answer)
+
+    assert f"《{POLICY}》第2條" in sources
+    assert "第5條" not in sources and "第1條" not in sources
+
+
+def test_refusal_lists_no_sources():
+
+    chunks = [_law_chunk("第 21 條"), _law_chunk("第 16 條", "動產擔保交易法")]
+
+    assert format_sources(chunks, "根據提供之資料，查無汽車貸款利率上限的相關規定。") == NO_SOURCES_CITED
+
+
+def test_several_articles_after_one_title_are_all_cited():
+
+    assert cited_articles("依《消費者保護法》第21條、第 22 條規定。") == {("消費者保護法", "21"), ("消費者保護法", "22")}
+
+
+def test_an_article_number_is_never_credited_to_another_document():
+
+    # 第2條 belongs to the policy here, not to 消費者保護法.
+    answer = f"依《消費者保護法》第 21 條；另依《{POLICY}》第2條。"
+    sources = format_sources([_law_chunk("第 2 條"), _law_chunk("第 21 條"), _policy_chunk("第2條")], answer)
+
+    assert "《消費者保護法》第 21 條" in sources and f"《{POLICY}》第2條" in sources
+    assert "《消費者保護法》第 2 條" not in sources
+
+
+def test_chinese_numerals_and_sub_articles_match():
+
+    assert cited_articles("《個人資料保護法》第二十二條及第一條之一") == {("個人資料保護法", "22"), ("個人資料保護法", "1-1")}
+    assert "第 1-1 條" in format_sources([_law_chunk("第 1-1 條", "個人資料保護法")], "《個人資料保護法》第一條之一")
+
+
+def test_a_split_article_is_listed_once():
+
+    chunk = _law_chunk("第 3 條", "洗錢防制法")
+
+    assert format_sources([chunk, chunk], "《洗錢防制法》第 3 條").count("第 3 條") == 1

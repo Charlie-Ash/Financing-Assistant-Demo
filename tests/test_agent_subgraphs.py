@@ -69,7 +69,10 @@ def _rag_state(query):
 
 def test_rag_reranks_wide_retrieval_and_relays_answer_verbatim():
 
-    llm = FakeChatLLM(canned_text="  提前還款違約金為剩餘本金的 1%。  ")
+    last = RETRIEVE_TOP_K - 1
+    # Cites only the top-ranked of the two chunks that survive reranking.
+    answer = f"提前還款違約金為剩餘本金的 1%（《消費者保護法》第 {last} 條）。"
+    llm = FakeChatLLM(canned_text=f"  {answer}  ")
     index, reranker = _FakeIndex(), _FakeReranker()
 
     result = build_rag_subgraph(index, llm, SAMPLING, reranker).invoke(_rag_state("違約金怎麼算？"))
@@ -80,18 +83,19 @@ def test_rag_reranks_wide_retrieval_and_relays_answer_verbatim():
 
     # Reranked order, each chunk labelled with its citation and date context.
     prompt = llm.calls[0]["messages"][0]["content"]
-    last = RETRIEVE_TOP_K - 1
     assert f"【來源 1】《消費者保護法》第 {last} 條（第 二 章 消費者權益；修正日期 2015-06-17）\nchunk-{last}" in prompt
     assert f"【來源 2】《消費者保護法》第 {last - 1} 條" in prompt
     assert "chunk-0" not in prompt
 
-    # The answer, then a code-built source list with links, then the disclaimer.
+    # The answer, then a code-built list of the sources it cites (with links),
+    # then the disclaimer. The retrieved-but-uncited chunk is left out.
     output = result["tool_result"]["output"]
-    assert output.startswith("提前還款違約金為剩餘本金的 1%。\n\n參考來源：\n")
+    assert output.startswith(f"{answer}\n\n參考來源：\n")
     assert (
         f"- 《消費者保護法》第 {last} 條（第 二 章 消費者權益；修正日期 2015-06-17） "
         f"https://law.moj.gov.tw/LawClass/LawSingle.aspx?pcode=J0170001&flno={last}"
     ) in output
+    assert f"第 {last - 1} 條（" not in output
     assert output.endswith(DISCLAIMER)
     assert ZH_TW_REPLY_INSTRUCTION in prompt
     assert llm.calls[0]["json_schema"] is None

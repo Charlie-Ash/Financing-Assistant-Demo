@@ -16,6 +16,10 @@ class RetrievedChunk:
     # Version/date context shown next to it, e.g. 第二章 消費者權益；修正日期 2015-06-17
     detail: str = ""
     url: str = ""
+    # The parts of `citation`, kept separately so the answer's own citations
+    # can be matched back to the chunks they came from (see rag/graph.py).
+    doc_title: str = ""
+    article_no: str = ""
 
     @property
     def label(self) -> str:
@@ -33,13 +37,13 @@ def chunk_from_metadata(text: str, metadata: dict) -> RetrievedChunk:
 
     if source_type == "law":
         details = [metadata.get("heading", ""), f"修正日期 {metadata['modified_date']}" if metadata.get("modified_date") else "", metadata.get("effective_note", "")]
-        return RetrievedChunk(text, f"《{title}》{article_no}", "；".join(d for d in details if d), metadata.get("url", ""))
+        return RetrievedChunk(text, f"《{title}》{article_no}", "；".join(d for d in details if d), metadata.get("url", ""), title, article_no)
 
     if source_type == "policy":
         details = [metadata.get("heading", ""), f"第{metadata['version']}版" if metadata.get("version") else "", f"生效日 {metadata['effective_date']}" if metadata.get("effective_date") else ""]
-        return RetrievedChunk(text, f"《{title}》{article_no}", "；".join(d for d in details if d), metadata.get("file_name", ""))
+        return RetrievedChunk(text, f"《{title}》{article_no}", "；".join(d for d in details if d), metadata.get("file_name", ""), title, article_no)
 
-    return RetrievedChunk(text, f"《{title}》", "", metadata.get("file_name", ""))
+    return RetrievedChunk(text, f"《{title}》", "", metadata.get("file_name", ""), title)
 
 
 def user_query(index: VectorStoreIndex, input_string: str, reranker: Optional[BaseNodePostprocessor] = None) -> list[RetrievedChunk]:
