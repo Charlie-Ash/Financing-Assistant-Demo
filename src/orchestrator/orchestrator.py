@@ -5,6 +5,8 @@ from contextlib import AsyncExitStack
 from pathlib import Path
 from typing import Optional
 
+import aiosqlite
+from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 
 from orchestrator import config, memory_manager
@@ -12,6 +14,18 @@ from orchestrator.agents.tool_router import ToolRouter
 from orchestrator.pipeline.llm import OrchestratorLLM
 from orchestrator.pipeline.graph import build_graph
 from schemas.tool_schema import build_tool_schema
+
+# Project types stored in checkpointed graph state (OrchestratorState.tool_call).
+# LangGraph only deserializes types it's been told about: unlisted ones log a
+# "Deserializing unregistered type" warning today and will be blocked in a
+# future version, which would break resuming a conversation after a restart.
+CHECKPOINT_ALLOWED_TYPES = [("schemas.tool_call", "ToolCall")]
+
+
+def build_checkpoint_serializer() -> JsonPlusSerializer:
+
+    return JsonPlusSerializer(allowed_msgpack_modules=CHECKPOINT_ALLOWED_TYPES)
+
 
 class Orchestrator():
 
@@ -64,10 +78,12 @@ class Orchestrator():
         # for the whole session rather than one block here (closed later via
         # aclose(), called from main.py's "bye" flow).
         config.CHECKPOINT_DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+        # The connection is opened here rather than via
+        # AsyncSqliteSaver.from_conn_string(), which has no way to pass the
+        # serializer that registers this project's checkpointed types.
         exit_stack = AsyncExitStack()
-        checkpointer = await exit_stack.enter_async_context(
-            AsyncSqliteSaver.from_conn_string(str(config.CHECKPOINT_DB_PATH))
-        )
+        conn = await exit_stack.enter_async_context(aiosqlite.connect(str(config.CHECKPOINT_DB_PATH)))
+        checkpointer = AsyncSqliteSaver(conn, serde=build_checkpoint_serializer())
 
         # The turn sequence (decide tool -> run tool -> generate reply ->
         # update memory) now lives in graph.py as a LangGraph StateGraph

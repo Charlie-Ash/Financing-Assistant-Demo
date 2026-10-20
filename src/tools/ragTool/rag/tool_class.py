@@ -1,4 +1,4 @@
-# RAG operations: embedded Qdrant index + reranker in this process, text
+# Regulation agent operations: embedded Qdrant index + reranker in this process, text
 # generation through the shared LLM server (src/llm/).
 import qdrant_client
 
@@ -51,7 +51,7 @@ class RAGTool():
         self.llm.wait_until_ready(config.settings.llm_startup_wait_seconds)
 
         self.sampling = SamplingConfig(
-            temperature=0.65,  # temperture: randomness
+            temperature=0.2,  # low: legal answers should stay close to the sources
             top_p=0.95,  # top_p; nucleus sampling
             max_tokens=512,  # Max tokens outputted
             repetition_penalty=1.1,  # Penalty to apply if tokens continue repeating.

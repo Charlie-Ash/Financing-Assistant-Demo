@@ -59,6 +59,12 @@ class LLMClientSettings(BaseSettings):
         default=None, validation_alias=AliasChoices("llm_api_key", "gemini_api_key"),
     )
 
+    # How the Simplified -> Traditional safety net rewrites this agent's
+    # output (see llm/text_norm.py): "s2twp" also converts mainland
+    # vocabulary; "chars" only fixes non-Traditional characters and never
+    # alters valid Traditional text -- for agents that quote sources verbatim.
+    llm_traditional_mode: Literal["s2twp", "chars"] = "s2twp"
+
     # Per-request timeout. Generous: under load the shared engine batches
     # requests from every agent, and a cold first request compiles grammars.
     llm_timeout_seconds: float = Field(default=120.0, gt=0)

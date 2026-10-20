@@ -33,6 +33,7 @@ class ChatLLM:
         provider: str = "vllm",
         api_key: str | None = None,
         reasoning_effort: str | None = None,
+        traditional_mode: str = "s2twp",
     ):
 
         self.base_url = base_url
@@ -44,6 +45,8 @@ class ChatLLM:
         # Off only for measuring a model's raw Simplified leakage (see
         # evals/run_routing_eval.py) -- every agent keeps it on.
         self.normalize_traditional = normalize_traditional
+        # "s2twp" or "chars" -- see llm/text_norm.to_traditional.
+        self.traditional_mode = traditional_mode
 
         # vLLM ignores the API key unless started with --api-key, but the
         # client library requires one. http_client is injectable so tests
@@ -68,9 +71,13 @@ class ChatLLM:
                 provider="gemini",
                 api_key=settings.llm_api_key.get_secret_value(),
                 reasoning_effort=settings.llm_reasoning_effort,
+                traditional_mode=settings.llm_traditional_mode,
             )
 
-        return cls(settings.llm_base_url, settings.llm_served_name, settings.llm_timeout_seconds, normalize_traditional)
+        return cls(
+            settings.llm_base_url, settings.llm_served_name, settings.llm_timeout_seconds, normalize_traditional,
+            traditional_mode=settings.llm_traditional_mode,
+        )
 
     # Blocks until the server lists this client's served model, so an agent
     # started before (or alongside) llm/serve.py simply waits for the model
@@ -190,4 +197,4 @@ class ChatLLM:
 
         text = response.choices[0].message.content or ""
 
-        return to_traditional(text) if self.normalize_traditional else text
+        return to_traditional(text, self.traditional_mode) if self.normalize_traditional else text

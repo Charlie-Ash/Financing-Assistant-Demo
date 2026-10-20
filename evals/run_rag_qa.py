@@ -11,9 +11,10 @@
 # If the RAG agent uses Gemini (LLM_PROVIDER=gemini in its .env), add
 # --delay to stay under the free tier's requests-per-minute limit.
 #
-# The QA set (evals/rag_qa_zh.jsonl) is company-specific and not committed
-# with real content -- copy evals/rag_qa_zh.example.jsonl and fill in 20-30
-# Traditional Chinese finance questions grounded in the ingested documents.
+# The QA set (evals/rag_qa_zh.jsonl): 20 questions grounded in the ingested
+# laws and demo policies, each with a reference answer and its source
+# article -- including one superseded-version check (qa-16) and one question
+# the documents can't answer (qa-20), which should get "查無相關規定".
 import argparse
 import asyncio
 import csv

@@ -6,7 +6,7 @@ A locally-hosted, multi-agent knowledge assistant built on **Google's Agent-to-A
 
 A2ASystem is an orchestrator ("Secretary") that routes each user message to the right specialist agent using vLLM guided/structured decoding, rather than a hand-parsed prompt:
 
-- **RAG Agent** — answers questions from a company's own documents (PDF ingestion → vector search → grounded answer).
+- **Regulation & Policy Agent** (`rag`) — answers questions about Taiwanese financing law (動產擔保交易法, 消費者保護法, 個人資料保護法, 洗錢防制法) and internal policies, citing the exact article (《法規名》第X條) for every claim.
 - **Actions Agent** — turns a request into a saved note on disk.
 
 Each agent is its own long-running process, and the orchestrator talks to them over the network using the A2A protocol rather than calling them as local functions. All of them generate text through **one shared vLLM server** (see [Architecture](#architecture)).
@@ -23,13 +23,13 @@ One vLLM server process holds the GPU's LLM, and three independent agent process
 |---|---|---|---|
 | **LLM server** | The only process that loads an LLM: one Chinese-capable FP8 model, served as `hotai-llm` | `src/llm/serve.py` | `http://0.0.0.0:8000/v1` |
 | **Orchestrator** | User-facing REPL; A2A **client**; decides which agent to call and composes the final reply | `src/main.py` | (local, stdin/stdout) |
-| **RAG Agent** | A2A **server**; answers from ingested documents | `src/tools/ragTool/a2a/a2a_server.py` | `http://0.0.0.0:8001` |
+| **Regulation & Policy Agent** | A2A **server**; answers regulation/policy questions with article citations | `src/tools/ragTool/a2a/a2a_server.py` | `http://0.0.0.0:8001` |
 | **Actions Agent** | A2A **server**; writes notes to disk | `src/tools/actionsTool/a2a/a2a_server.py` | `http://0.0.0.0:8002` |
 
 Internally, every agent is its own compiled **LangGraph** graph:
 
 - **Orchestrator** — `decide_tool` (guided-decoding tool routing) → route to the local `default` tool or a discovered remote agent → `generate_response` → `update_memory`.
-- **RAG Agent** — `extract_query` → `retrieve` (Qdrant vector search for 20 candidates, then `bge-reranker-v2-m3` keeps the best 4) → `generate_answer`.
+- **Regulation & Policy Agent** — `extract_query` → `retrieve` (Qdrant vector search for 20 candidates, then `bge-reranker-v2-m3` keeps the best 4) → `generate_answer` (labelled sources in the prompt; a code-built 參考來源 list and disclaimer appended to the answer).
 - **Actions Agent** — `extract_request` → `generate_content` (guided-decoding note content + filename) → `save_note`.
 
 At startup, the orchestrator discovers each configured remote agent's `AgentCard` over HTTP; an agent that's unreachable is simply excluded from routing for that session rather than causing a crash. Since the Actions agent needs conversation context (e.g. "note down your previous answer") but lives in a different process, the orchestrator attaches a slice of recent chat history to the outgoing A2A message's metadata, and the remote agent reconstructs it on its side.
@@ -78,9 +78,12 @@ A2ASystem/
 │   ├── routing_zh.jsonl          # Experiment 2 routing questions, in Traditional Chinese
 │   ├── run_routing_eval.py       # routing accuracy + Simplified-leakage per served model
 │   ├── run_rag_qa.py             # collects RAG answers into a CSV for rubric scoring
-│   └── rag_qa_zh.example.jsonl   # template for the company-specific RAG QA set
-├── data/                         # runtime data (mostly generated at run time)
-│   └── Test_PDF.pdf              # sample document for RAG ingestion
+│   └── rag_qa_zh.jsonl           # 20 regulation/policy QA pairs with reference answers and source articles
+├── data/                         # documents + runtime data
+│   ├── regulations/              # what the regulation agent answers from (RAG_DATA_DIR)
+│   │   ├── laws/*.json           # 4 laws from law.moj.gov.tw (python -m tools.ragTool.fetch_laws)
+│   │   └── policies/*.md         # fictional demo SOPs (one superseded v1 kept to show versioning)
+│   ├── Test_PDF.pdf              # old sample document, no longer ingested
 │   # created at runtime: chat_log/, checkpoints/, notes/
 ├── src/
 │   ├── main.py                   # CLI entry point (Orchestrator REPL)
@@ -113,9 +116,10 @@ A2ASystem/
 │       ├── base.py               # Tool protocol + ToolResult contract
 │       ├── gpu_utils.py          # VRAM pre-flight check (run by llm/serve.py)
 │       ├── defaultTool/          # trivial in-process fallback tool
-│       ├── ragTool/              # standalone RAG A2A agent (own process)
+│       ├── ragTool/              # standalone Regulation & Policy A2A agent (own process)
 │       │   ├── config.py
 │       │   ├── .env.example      # copy to .env in this folder to override defaults (see Configuration)
+│       │   ├── fetch_laws.py     # refreshes data/regulations/laws/ from law.moj.gov.tw
 │       │   ├── rag/              # dataIngestion, userQuery, models (embedding + reranker), graph, state, tool_class
 │       │   └── a2a/              # a2a_server.py, agent_executor.py
 │       └── actionsTool/          # standalone Actions A2A agent (own process)
@@ -167,6 +171,22 @@ pip install torch torchvision torchaudio --index-url https://download.pytorch.or
 
 Everything above gets the code and dependencies installed with sensible defaults already built in — you don't strictly need to touch any config to run the project. See [Configuration](#configuration) below if you want to change a model, a port, a VRAM budget, or anything else.
 
+## Regulation documents
+
+The regulation agent answers only from the documents under `RAG_DATA_DIR` (default `data/regulations/`):
+
+- **Laws** (`laws/*.json`): 動產擔保交易法, 消費者保護法, 個人資料保護法 and 洗錢防制法, taken from the Ministry of Justice's open-data download. Each article is indexed separately with its chapter, amendment date and a link to that article on law.moj.gov.tw. Deleted articles are skipped. A law whose newest amendments don't yet have a start date (currently 個資法) gets a warning on every citation.
+- **Policies** (`policies/*.md`): **fictional demo SOPs**, clearly marked 【示範用虛構文件】. Each file starts with a `title`/`version`/`effective_date`/`superseded` header and uses `## 第X條 標題` sections. Files marked `superseded: true` are kept for the record but never indexed.
+- **Any `*.pdf`** in the folder is ingested as plain text, without article-level citations.
+
+To update the laws, or add one (edit `LAWS` in `src/tools/ragTool/fetch_laws.py`):
+
+```bash
+cd src
+python -m tools.ragTool.fetch_laws      # rewrites data/regulations/laws/*.json
+rm -rf tools/ragTool/qdrant_db          # the index is only built when missing, so delete it after any document change
+```
+
 ## Configuration
 
 The LLM server and each of the three agents (Orchestrator, RAG, Actions) read their own settings independently, in this order of priority: **a real OS environment variable** you've exported, then **that agent's own `.env` file**, then **the built-in default** baked into its `config.py`. You never have to set anything for the project to run — the built-in defaults are what's been used throughout development — but if you want to change a model, a port, or a GPU memory budget, a `.env` file is the easiest way.
@@ -207,8 +227,10 @@ A few things worth knowing:
 | Every agent | `LLM_GEMINI_MODEL` | `gemini-3.5-flash-lite` | Gemini model id, used when `LLM_PROVIDER=gemini` |
 | Every agent | `LLM_REASONING_EFFORT` | `minimal` | Gemini thinking level (`none`/`minimal`/`low`/`medium`/`high`); keep it as low as the model accepts |
 | Every agent | `GEMINI_API_KEY` | (none) | Gemini API key; required when `LLM_PROVIDER=gemini`. Keep it in the git-ignored `.env`, never in `.env.example` |
+| Every agent | `LLM_TRADITIONAL_MODE` | `s2twp` (`chars` for RAG) | Simplified→Traditional safety net: `s2twp` also converts mainland vocabulary; `chars` only fixes non-Traditional characters and never alters valid Traditional text, so quoted law stays exact |
 | RAG | `RAG_EMBEDDING_MODEL` | `BAAI/bge-m3` | Embedding model used to index and search documents |
-| RAG | `RAG_COLLECTION_NAME` | `my_docs` | Base Qdrant collection name; the embedding model is appended (`my_docs__bge-m3`), so switching models rebuilds the index |
+| RAG | `RAG_DATA_DIR` | `data/regulations` | Folder of documents to ingest (`laws/*.json`, `policies/*.md`, any `*.pdf`); relative paths resolve against the project root |
+| RAG | `RAG_COLLECTION_NAME` | `regulations` | Base Qdrant collection name; the embedding model is appended (`regulations__bge-m3`), so switching models rebuilds the index |
 | RAG | `RAG_RERANKER_MODEL` | `BAAI/bge-reranker-v2-m3` | Cross-encoder that re-scores retrieved chunks |
 | RAG | `RAG_EMBED_DEVICE` | `cuda` | Where the embedding and reranker run (`cuda` or `cpu`) |
 | RAG | `RAG_RETRIEVE_TOP_K` / `RAG_RERANK_TOP_N` | `20` / `4` | Vector-search candidates, and how many survive reranking into the prompt |
@@ -292,7 +314,7 @@ It reports three things:
 
 Restart the server with each profile (`python -m llm.serve --profile ...`) and rerun. The agents don't need restarting.
 
-`evals/run_rag_qa.py` sends a QA set to the running RAG agent and writes a CSV to score against the rubric (Faithfulness 0–2 + Relevance 0–2). Before running it, copy `evals/rag_qa_zh.example.jsonl` to `evals/rag_qa_zh.jsonl` and fill in 20–30 questions grounded in the ingested documents. Results go to `evals/results/`, which is git-ignored.
+`evals/run_rag_qa.py` sends the 20 questions in `evals/rag_qa_zh.jsonl` to the running regulation agent and writes a CSV, with each reference answer and source article, to score against the rubric (Faithfulness 0–2 + Relevance 0–2). It includes one superseded-policy check and one question the documents can't answer. Results go to `evals/results/`, which is git-ignored.
 
 ## Testing
 

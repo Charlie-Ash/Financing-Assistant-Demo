@@ -33,7 +33,7 @@ async def test_discover_remote_agent_succeeds_against_a_real_in_process_server()
     )
 
     assert agent.name == "rag"
-    assert agent.agent_card.skills[0].id == "answer_from_company_documents"
+    assert agent.agent_card.skills[0].id == "answer_regulation_and_policy_questions"
 
 
 async def test_discover_remote_agent_returns_none_for_an_unreachable_agent():
