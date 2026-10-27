@@ -87,6 +87,7 @@ A2ASystem/
 │   # created at runtime: chat_log/, checkpoints/, credit/ (synthetic customer DB + audit log)
 ├── src/
 │   ├── main.py                   # CLI entry point (Orchestrator REPL)
+│   ├── web/                      # browser interface: server.py (FastAPI), session.py, static/ (page)
 │   ├── chat_history.py           # shared LangChain-messages <-> wire-format helpers
 │   ├── llm/                      # the shared LLM layer
 │   │   ├── serve.py              # starts the one vLLM server (python -m llm.serve)
@@ -97,7 +98,7 @@ A2ASystem/
 │   │   ├── text_norm.py          # OpenCC Simplified -> Traditional safety net
 │   │   └── .env.example          # copy to .env in this folder to override defaults (see Configuration)
 │   ├── orchestrator/              # the Orchestrator agent (A2A client)
-│   │   ├── orchestrator.py       # session/thread lifecycle, run_orchestrator()
+│   │   ├── orchestrator.py       # session/thread lifecycle, run_orchestrator() / run_turn()
 │   │   ├── config.py             # REMOTE_AGENTS list, checkpoint DB path, LLM server address
 │   │   ├── .env.example          # copy to .env in this folder to override defaults (see Configuration)
 │   │   ├── memory_manager.py     # chat_log.md + thread_id.txt file I/O
@@ -286,7 +287,36 @@ python main.py --user wang01 --role sales
 
 Type `bye` in the orchestrator REPL to exit (you'll be asked whether to save a summarized memory of the session).
 
+Instead of the REPL in terminal 3, you can use the browser interface: run `python -m web.server` from `src/` and open http://localhost:8080 (see [Web interface](#web-interface)).
+
 Want to change a model, a port, or a GPU memory budget first? See [Configuration](#configuration) above.
+
+## Web interface
+
+A browser chat page in Traditional Chinese that works like the REPL, served by one small FastAPI server (page and API on the same port; no Node.js or build step).
+
+- **Welcome screen:** enter a user ID and pick 業務 (`sales`) or 授信 (`credit`) — the same identity `main.py --user/--role` sets, locked for that chat.
+- **Chat:** each reply shows which agent answered (法規查詢 / 客戶查詢 / 一般對話), the response time and a copy button; replies are rendered as formatted text with clickable 參考來源 links. Clickable example questions appear before the first message.
+- **說明 (help):** what each agent does, which agents are currently connected, what each role can see, and data/privacy notes.
+- **結束對話 (end chat):** choose 儲存 or 不儲存, as with `bye`. Saving writes the same `data/<name>_chat_points.md` summary and offers a 下載摘要 button.
+- One chat at a time (the end-of-chat summary is a single shared file); reloading the page keeps the current chat. Every new web chat starts a fresh conversation thread.
+
+Run it after the agents are up:
+
+```bash
+cd src
+python -m web.server        # → http://127.0.0.1:8080
+```
+
+The server listens on `127.0.0.1` only, because the system has no login yet. To open it from another computer (e.g. your Windows browser while it runs on the Ubuntu box):
+
+- **VS Code Remote-SSH:** with the box open in VS Code, the port is forwarded automatically — use *Open in Browser* in the **Ports** tab.
+- **SSH tunnel:** keep `ssh -L 8080:localhost:8080 <user>@<box>` running, then open http://localhost:8080.
+
+| Variable (`src/web/.env`) | Default | Purpose |
+|---|---|---|
+| `WEB_HOST` | `127.0.0.1` | Bind address. Keep it local until there is authentication (Phase 5) |
+| `WEB_PORT` | `8080` | Port for both the page and its API |
 
 ## Using the Gemini API
 

@@ -107,12 +107,26 @@ class Orchestrator():
     # invoke() (see graph.py's run_remote_tool).
     async def run_orchestrator(self, user_message):
 
+        return (await self.run_turn(user_message))["reply"]
+
+    # Same turn as run_orchestrator(), also reporting which tool/agent
+    # answered ("default", "rag", "credit_lookup", ...) -- the web interface
+    # tags each reply with it (see src/web/).
+    async def run_turn(self, user_message) -> dict:
+
         # Named invoke_config (not config) so it doesn't shadow the
         # module-level `orchestrator.config` import above within this
         # function's scope.
         invoke_config = {"configurable": {"thread_id": self.thread_id}}
         result = await self.graph.ainvoke({"user_message": user_message, "caller": self.caller}, config=invoke_config)
-        return result["final_response"]
+        return {"reply": result["final_response"], "tool": result["tool_call"].tool}
+
+    # Names of the remote agents that were reachable when this session
+    # started (an agent that's down is skipped at discovery, see
+    # tool_router.ToolRouter.discover).
+    def connected_agents(self) -> list[str]:
+
+        return list(self.tool_router.remote_agents)
 
     # Called from main.py's "bye" flow once the user has answered the save prompt.
     def end_session(self, save: bool) -> Optional[Path]:

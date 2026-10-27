@@ -15,6 +15,12 @@ __pycache__/
 # RAG tool's local Qdrant vector store
 qdrant_db/
 
+# Conversation state and end-of-chat summaries (CLI and web interface) --
+# they hold conversation content, including masked customer details
+data/checkpoints/
+data/chat_log/
+data/*_chat_points*.md
+
 # Credit Lookup agent's synthetic database (rebuilt from seed_db.py) and
 # its audit log of who looked up whom
 data/credit/

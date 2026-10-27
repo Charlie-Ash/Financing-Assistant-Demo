@@ -140,3 +140,17 @@ async def test_call_remote_agent_attaches_caller_metadata_when_given():
     await call_remote_agent(agent, "王大明有沒有逾期紀錄？", caller={"user_id": "wang01", "role": "sales"})
 
     assert received_caller_sink["caller"] == {"user_id": "wang01", "role": "sales"}
+
+
+async def test_discovered_agent_is_called_at_the_configured_url_not_the_advertised_bind_address():
+    # Agent cards advertise their bind address (e.g. http://0.0.0.0:8002/),
+    # which Windows refuses to connect to; messages must go to the URL the
+    # card was actually fetched from (REMOTE_AGENTS).
+    def card_with_bind_address(host, port):
+        return build_rag_agent_card("0.0.0.0", 8001)
+
+    agent = await build_fake_remote_agent(
+        "rag", RAGAgentExecutor(build_fake_rag_subgraph()), card_with_bind_address, relay_verbatim_on_success=True,
+    )
+
+    assert agent.agent_card.url == "http://rag.test/"

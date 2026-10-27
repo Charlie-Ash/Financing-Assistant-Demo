@@ -48,7 +48,7 @@ async def discover_remote_agent(
     try:
         if httpx_client is not None:
             resolver = A2ACardResolver(httpx_client, cfg.url)
-            card = await resolver.get_agent_card()
+            card = _reachable_card(await resolver.get_agent_card(), cfg)
             client = await ClientFactory.connect(card, client_config=ClientConfig(httpx_client=httpx_client))
         else:
             # Explicit, generous timeout on both clients below -- without
@@ -61,7 +61,7 @@ async def discover_remote_agent(
 
             async with httpx.AsyncClient(timeout=timeout) as resolver_client:
                 resolver = A2ACardResolver(resolver_client, cfg.url)
-                card = await resolver.get_agent_card()
+                card = _reachable_card(await resolver.get_agent_card(), cfg)
 
             # Passing the already-resolved card (instead of the bare url) to
             # connect() skips re-fetching it -- one network round trip total.
@@ -75,6 +75,16 @@ async def discover_remote_agent(
         return None
 
     return RemoteAgent(cfg.name, cfg.url, card, client, cfg.relay_verbatim_on_success)
+
+
+# An agent card advertises the address its server was started with, which is
+# usually the bind address ("http://0.0.0.0:8002/") rather than one a client
+# can connect to: Linux happens to treat 0.0.0.0 as "this machine", Windows
+# refuses it, and neither works when the agent is reached by hostname. The
+# card was just fetched successfully from cfg.url, so messages go there.
+def _reachable_card(card: AgentCard, cfg: RemoteAgentConfig) -> AgentCard:
+
+    return card.model_copy(update={"url": cfg.url.rstrip("/") + "/"})
 
 
 # Joins every TextPart in a list of Parts into one string -- both a Task's

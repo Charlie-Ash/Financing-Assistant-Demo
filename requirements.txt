@@ -19,6 +19,8 @@ langchain-core>=0.3.0
 ipython
 a2a-sdk[http-server]>=0.3.0,<1.0.0
 uvicorn
+# The web interface (src/web/). Also pulled in by a2a-sdk[http-server]; listed for clarity.
+fastapi
 pytest-asyncio
 langgraph-checkpoint-sqlite>=3.0.0
 # Dowload CUDA-enabled "torch" like so
