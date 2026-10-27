@@ -8,9 +8,13 @@
 #   # RAG server + LLM server running; from the repo root:
 #   python evals/run_rag_qa.py --label qwen3-14b-fp8
 #
-# The QA set (evals/rag_qa_zh.jsonl) is company-specific and not committed
-# with real content -- copy evals/rag_qa_zh.example.jsonl and fill in 20-30
-# Traditional Chinese finance questions grounded in the ingested documents.
+# If the RAG agent uses Gemini (LLM_PROVIDER=gemini in its .env), add
+# --delay to stay under the free tier's requests-per-minute limit.
+#
+# The QA set (evals/rag_qa_zh.jsonl): 20 questions grounded in the ingested
+# laws and demo policies, each with a reference answer and its source
+# article -- including one superseded-version check (qa-16) and one question
+# the documents can't answer (qa-20), which should get "查無相關規定".
 import argparse
 import asyncio
 import csv
@@ -28,7 +32,7 @@ from orchestrator.agents.remote_agent import call_remote_agent, discover_remote_
 EVALS_DIR = Path(__file__).resolve().parent
 
 
-async def run(label: str, qa_path: Path, agent_name: str) -> Path:
+async def run(label: str, qa_path: Path, agent_name: str, delay: float) -> Path:
 
     qa_items = [json.loads(line) for line in qa_path.read_text(encoding="utf-8").splitlines() if line.strip()]
 
@@ -57,6 +61,7 @@ async def run(label: str, qa_path: Path, agent_name: str) -> Path:
                 item["id"], item["question"], item.get("reference_answer", ""), item.get("source_doc", ""),
                 result["output"], "", "",
             ])
+            await asyncio.sleep(delay)
 
     return out_path
 
@@ -67,9 +72,10 @@ def main():
     parser.add_argument("--label", required=True, help="name for this run, e.g. the served profile")
     parser.add_argument("--qa", type=Path, default=EVALS_DIR / "rag_qa_zh.jsonl")
     parser.add_argument("--agent", default="rag", help="routing name of the RAG agent in REMOTE_AGENTS")
+    parser.add_argument("--delay", type=float, default=0.0, help="seconds to wait between questions (API rate limits)")
     args = parser.parse_args()
 
-    out_path = asyncio.run(run(args.label, args.qa, args.agent))
+    out_path = asyncio.run(run(args.label, args.qa, args.agent, args.delay))
     print(f"\nAnswers written to {out_path} -- fill in the two score columns.")
 
 

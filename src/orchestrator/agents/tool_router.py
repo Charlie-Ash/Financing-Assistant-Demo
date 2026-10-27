@@ -2,8 +2,8 @@
 # "default" tool (kept in-process on purpose -- no reason to network a stub,
 # see PROJECT_SPRINT_NOTES.md), and whatever remote A2A agents got
 # discovered/configured at startup (see orchestrator/config.py). This
-# replaces the old ToolRouter, which constructed RAGTool()/ActionsTool()
-# directly and ran their subgraphs in-process.
+# replaces the old ToolRouter, which constructed each tool directly and ran
+# their subgraphs in-process.
 from tools.defaultTool.tool_class import DefaultTool
 
 from orchestrator import config
@@ -39,7 +39,7 @@ class ToolRouter():
 
         # Dictionary of all available in-process tools that satisfy
         # tools/base.py's Tool protocol (a plain run(tool_args) -> ToolResult
-        # call). Only "default" belongs here now -- RAG/Actions are real
+        # call). Only "default" belongs here now -- RAG/Credit Lookup are real
         # network agents, held in self.remote_agents instead.
         self.tools = {
 
@@ -48,7 +48,7 @@ class ToolRouter():
         }
 
         # Populated by discover() below. Keyed by the routing name each
-        # RemoteAgentConfig entry was given (e.g. "rag", "actions"), not
+        # RemoteAgentConfig entry was given (e.g. "rag", "credit_lookup"), not
         # hardcoded attributes -- however many agents orchestrator/config.py
         # lists, that's how many entries show up here.
         self.remote_agents: dict[str, RemoteAgent] = {}

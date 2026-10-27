@@ -17,7 +17,7 @@ def _thread_config(thread_id="test-thread"):
     return {"configurable": {"thread_id": thread_id}}
 
 
-@pytest.mark.parametrize("tool_name", ["default", "rag", "actions"])
+@pytest.mark.parametrize("tool_name", ["default", "rag", "credit_lookup"])
 async def test_each_tool_branch_is_reached_and_produces_a_final_response(tool_name):
 
     llm = FakeOrchestratorLLM(next_tool_call=ToolCall(tool=tool_name, action="run", args={}))
@@ -27,21 +27,21 @@ async def test_each_tool_branch_is_reached_and_produces_a_final_response(tool_na
     result = await graph.ainvoke({"user_message": "hello there"}, config=_thread_config())
 
     # The matching fake tool/agent actually ran (and no other one did).
-    # "rag"/"actions" aren't in tool_router.tools anymore (see
-    # FakeToolRouter) -- they're tracked separately via
-    # rag_received_args/actions_received_args, populated by the real
-    # RAGAgentExecutor/ActionsAgentExecutor rebuilding a ToolCall server-side
-    # from the A2A message text (see tools/*/a2a/agent_executor.py).
+    # "rag"/"credit_lookup" aren't in tool_router.tools (see FakeToolRouter)
+    # -- they're tracked separately via rag_received_args/
+    # credit_lookup_received_args, populated by the real
+    # RAGAgentExecutor/CreditLookupAgentExecutor rebuilding a ToolCall
+    # server-side from the A2A message text (see tools/*/a2a/agent_executor.py).
     if tool_name == "rag":
         assert tool_router.rag_received_args["args"] is not None
-        assert tool_router.actions_received_args["args"] is None
-    elif tool_name == "actions":
-        assert tool_router.actions_received_args["args"] is not None
+        assert tool_router.credit_lookup_received_args["args"] is None
+    elif tool_name == "credit_lookup":
+        assert tool_router.credit_lookup_received_args["args"] is not None
         assert tool_router.rag_received_args["args"] is None
     else:
         assert tool_router.tools[tool_name].received_args is not None
         assert tool_router.rag_received_args["args"] is None
-        assert tool_router.actions_received_args["args"] is None
+        assert tool_router.credit_lookup_received_args["args"] is None
 
     for other_name, other_tool in tool_router.tools.items():
         if other_name != tool_name:
@@ -64,52 +64,54 @@ async def test_rag_branch_always_receives_the_users_exact_message_as_query():
     tool_router = await FakeToolRouter.create()
     graph = build_graph(llm, tool_router)
 
-    await graph.ainvoke({"user_message": "what is Pete's favorite subject?"}, config=_thread_config())
+    await graph.ainvoke({"user_message": "提前清償要付違約金嗎？"}, config=_thread_config())
 
-    assert tool_router.rag_received_args["args"] == {"query": "what is Pete's favorite subject?"}
+    assert tool_router.rag_received_args["args"] == {"query": "提前清償要付違約金嗎？"}
 
 
-async def test_actions_branch_always_receives_the_users_exact_message_as_request():
+async def test_credit_lookup_branch_always_receives_the_users_exact_message_as_request():
 
     # Same reasoning as the RAG test above: whatever the LLM put in
     # tool_call.args (here, a deliberately wrong "request") is ignored --
-    # the Actions agent always receives the user's exact message as A2A text.
+    # the Credit Lookup agent always receives the user's exact message as A2A text.
     llm = FakeOrchestratorLLM(
-        next_tool_call=ToolCall(tool="actions", action="run", args={"request": "something else entirely"})
+        next_tool_call=ToolCall(tool="credit_lookup", action="run", args={"request": "something else entirely"})
     )
     tool_router = await FakeToolRouter.create()
     graph = build_graph(llm, tool_router)
 
-    await graph.ainvoke({"user_message": "remember Pete likes astronomy"}, config=_thread_config())
+    await graph.ainvoke({"user_message": "王大明有沒有逾期紀錄？"}, config=_thread_config())
 
-    assert tool_router.actions_received_args["args"] == {"request": "remember Pete likes astronomy"}
+    assert tool_router.credit_lookup_received_args["args"] == {"request": "王大明有沒有逾期紀錄？"}
 
 
-async def test_actions_branch_receives_chat_history_over_a2a_metadata():
-    # Once Actions is called over a real A2A boundary, there's no shared
-    # Python-level MemorySaver/state to inherit chat history from directly --
-    # so instead the orchestrator attaches a slice of state["messages"] to
-    # the outgoing A2A message's metadata field explicitly (see
+async def test_credit_lookup_branch_receives_chat_history_and_caller_over_a2a_metadata():
+    # Across a real A2A boundary there's no shared Python-level state, so the
+    # orchestrator attaches a slice of state["messages"] and the caller's
+    # identity to the outgoing message's metadata explicitly (see
     # orchestrator/agents/remote_agent.py's call_remote_agent), and
-    # ActionsAgentExecutor reconstructs it back into "messages" server-side
-    # (see tools/actionsTool/a2a/agent_executor.py). This is what makes "note
-    # down your previous answer" work again through the Actions agent.
+    # CreditLookupAgentExecutor reconstructs both server-side (see
+    # tools/creditLookupTool/a2a/agent_executor.py). History is what resolves
+    # 「他」 to a customer named earlier; the caller's role decides what data
+    # the lookup may return.
     llm = FakeOrchestratorLLM(next_tool_call=ToolCall(tool="default", action="run", args={}))
     tool_router = await FakeToolRouter.create()
     graph = build_graph(llm, tool_router)
-    config = _thread_config("actions-history-thread")
+    config = _thread_config("credit-lookup-history-thread")
+    caller = {"user_id": "lin02", "role": "credit"}
 
-    await graph.ainvoke({"user_message": "first message"}, config=config)
+    await graph.ainvoke({"user_message": "first message", "caller": caller}, config=config)
 
-    llm.next_tool_call = ToolCall(tool="actions", action="run", args={})
-    await graph.ainvoke({"user_message": "note down your previous answer"}, config=config)
+    llm.next_tool_call = ToolCall(tool="credit_lookup", action="run", args={})
+    await graph.ainvoke({"user_message": "他最近有逾期嗎？", "caller": caller}, config=config)
 
-    messages = tool_router.actions_received_messages["messages"]
+    messages = tool_router.credit_lookup_received_messages["messages"]
     assert [(type(m).__name__, m.content) for m in messages] == [
         ("HumanMessage", "first message"),
         ("AIMessage", "canned reply about default-output"),
-        ("HumanMessage", "note down your previous answer"),
+        ("HumanMessage", "他最近有逾期嗎？"),
     ]
+    assert tool_router.credit_lookup_received_caller["caller"] == caller
 
 
 async def test_conversation_history_persists_across_turns_with_same_thread_id():

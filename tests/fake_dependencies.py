@@ -1,11 +1,11 @@
 # Stand-ins for OrchestratorLLM and the local tool, used by the graph tests
-# so they can run without a GPU. The real RAGTool/ActionsTool each load a
-# whole vLLM engine (RAGTool a vector index too) in their __init__, so they
-# must never be constructed here -- these fakes only need to satisfy the same
+# so they can run without a GPU. The real RAGTool/CreditLookupTool connect to
+# an LLM backend (RAGTool also loads a vector index, CreditLookupTool a
+# database) in their __init__, so they must never be constructed here -- these fakes only need to satisfy the same
 # shapes graph.py calls against (OrchestratorLLM's phase methods, and the
 # Tool protocol's run()).
 #
-# Remote agents (RAG/Actions) are no longer faked with a stand-in subgraph
+# Remote agents (RAG/Credit Lookup) are no longer faked with a stand-in subgraph
 # wired straight into the graph -- they're real A2A network calls now (see
 # orchestrator/agents/remote_agent.py). So instead of faking the *call*, this file
 # fakes the *server on the other end*: a real, in-process
@@ -23,9 +23,9 @@ from langgraph.graph import StateGraph, START, END
 from orchestrator.config import RemoteAgentConfig
 from orchestrator.agents.remote_agent import RemoteAgent, discover_remote_agent
 from schemas.tool_call import ToolCall
-from tools.actionsTool.a2a.a2a_server import build_agent_card as build_actions_agent_card
-from tools.actionsTool.a2a.agent_executor import ActionsAgentExecutor
-from tools.actionsTool.actions.state import ActionsSubgraphState
+from tools.creditLookupTool.a2a.a2a_server import build_agent_card as build_credit_lookup_agent_card
+from tools.creditLookupTool.a2a.agent_executor import CreditLookupAgentExecutor
+from tools.creditLookupTool.credit_lookup.state import CreditLookupSubgraphState
 from tools.ragTool.a2a.a2a_server import build_agent_card as build_rag_agent_card
 from tools.ragTool.a2a.agent_executor import RAGAgentExecutor
 from tools.ragTool.rag.state import RAGSubgraphState
@@ -65,12 +65,14 @@ class FakeOrchestratorLLM:
 
 class FakeChatLLM:
     """Stand-in for llm.client.ChatLLM: records every chat() call and
-    returns a canned reply, so the REAL RAG/Actions subgraphs can be run
-    without an LLM server behind them."""
+    returns a canned reply, so the REAL RAG/Credit Lookup subgraphs can be
+    run without an LLM server behind them. canned_text may be a list, for a
+    subgraph that calls the LLM more than once: replies are returned in
+    order, the last one repeating."""
 
-    def __init__(self, canned_text: str = "", error: Exception | None = None):
+    def __init__(self, canned_text: str | list[str] = "", error: Exception | None = None):
 
-        self.canned_text = canned_text
+        self.replies = list(canned_text) if isinstance(canned_text, list) else [canned_text]
         self.error = error
         self.calls = []
 
@@ -79,7 +81,7 @@ class FakeChatLLM:
         self.calls.append({"messages": messages, "sampling": sampling, "json_schema": json_schema})
         if self.error is not None:
             raise self.error
-        return self.canned_text
+        return self.replies.pop(0) if len(self.replies) > 1 else self.replies[0]
 
 
 class FakeTool:
@@ -116,23 +118,28 @@ def build_fake_rag_subgraph(canned_output="rag-output", relay_verbatim=True, rec
     return sub.compile()
 
 
-# Stands in for tools.actionsTool.actions.graph.build_actions_subgraph()'s
-# real output, same reasoning as build_fake_rag_subgraph above.
-def build_fake_actions_subgraph(
-    canned_output="actions-output", relay_verbatim=False, received_args_sink=None, received_messages_sink=None
+# Stands in for tools.creditLookupTool.credit_lookup.graph.build_credit_lookup_subgraph()'s
+# real output, same reasoning as build_fake_rag_subgraph above. The sinks
+# record what crossed the A2A boundary: the request, the reconstructed chat
+# history and the caller identity.
+def build_fake_credit_lookup_subgraph(
+    canned_output="credit-lookup-output", relay_verbatim=False,
+    received_args_sink=None, received_messages_sink=None, received_caller_sink=None,
 ):
 
-    def fake_actions_run(state: ActionsSubgraphState) -> dict:
+    def fake_credit_lookup_run(state: CreditLookupSubgraphState) -> dict:
         if received_args_sink is not None:
             received_args_sink["args"] = state["tool_call"].args
         if received_messages_sink is not None:
             received_messages_sink["messages"] = state.get("messages", [])
+        if received_caller_sink is not None:
+            received_caller_sink["caller"] = state.get("caller")
         return {"tool_result": {"output": canned_output, "relay_verbatim": relay_verbatim}}
 
-    sub = StateGraph(ActionsSubgraphState)
-    sub.add_node("fake_actions_run", fake_actions_run)
-    sub.add_edge(START, "fake_actions_run")
-    sub.add_edge("fake_actions_run", END)
+    sub = StateGraph(CreditLookupSubgraphState)
+    sub.add_node("fake_credit_lookup_run", fake_credit_lookup_run)
+    sub.add_edge(START, "fake_credit_lookup_run")
+    sub.add_edge("fake_credit_lookup_run", END)
     return sub.compile()
 
 
@@ -192,12 +199,12 @@ class FakeToolRouter:
         }
         self.remote_agents: dict[str, RemoteAgent] = {}
 
-        # Populated by create() below; kept here too under their old names
-        # so existing tests reading tool_router.rag_received_args/
-        # actions_received_args don't need to change shape.
+        # Sinks the fake agents' subgraphs write into (see create() below),
+        # so tests can check what actually crossed the A2A boundary.
         self.rag_received_args = {"args": None}
-        self.actions_received_args = {"args": None}
-        self.actions_received_messages = {"messages": None}
+        self.credit_lookup_received_args = {"args": None}
+        self.credit_lookup_received_messages = {"messages": None}
+        self.credit_lookup_received_caller = {"caller": None}
 
     @classmethod
     async def create(cls) -> "FakeToolRouter":
@@ -212,17 +219,18 @@ class FakeToolRouter:
         )
         self.remote_agents["rag"] = rag_agent
 
-        actions_subgraph = build_fake_actions_subgraph(
-            canned_output="actions-output",
+        credit_lookup_subgraph = build_fake_credit_lookup_subgraph(
+            canned_output="credit_lookup-output",
             relay_verbatim=False,
-            received_args_sink=self.actions_received_args,
-            received_messages_sink=self.actions_received_messages,
+            received_args_sink=self.credit_lookup_received_args,
+            received_messages_sink=self.credit_lookup_received_messages,
+            received_caller_sink=self.credit_lookup_received_caller,
         )
-        actions_agent = await build_fake_remote_agent(
-            "actions", ActionsAgentExecutor(actions_subgraph), build_actions_agent_card,
+        credit_lookup_agent = await build_fake_remote_agent(
+            "credit_lookup", CreditLookupAgentExecutor(credit_lookup_subgraph), build_credit_lookup_agent_card,
             relay_verbatim_on_success=False,
         )
-        self.remote_agents["actions"] = actions_agent
+        self.remote_agents["credit_lookup"] = credit_lookup_agent
 
         return self
 

@@ -14,13 +14,13 @@ from orchestrator.config import RemoteAgentConfig
 from orchestrator.agents.remote_agent import call_remote_agent, discover_remote_agent
 
 from fake_dependencies import (
-    build_fake_actions_subgraph,
+    build_fake_credit_lookup_subgraph,
     build_fake_failing_subgraph,
     build_fake_rag_subgraph,
     build_fake_remote_agent,
 )
-from tools.actionsTool.a2a.a2a_server import build_agent_card as build_actions_agent_card
-from tools.actionsTool.a2a.agent_executor import ActionsAgentExecutor
+from tools.creditLookupTool.a2a.a2a_server import build_agent_card as build_credit_lookup_agent_card
+from tools.creditLookupTool.a2a.agent_executor import CreditLookupAgentExecutor
 from tools.ragTool.a2a.a2a_server import build_agent_card as build_rag_agent_card
 from tools.ragTool.a2a.agent_executor import RAGAgentExecutor
 from tools.ragTool.rag.state import RAGSubgraphState
@@ -33,7 +33,7 @@ async def test_discover_remote_agent_succeeds_against_a_real_in_process_server()
     )
 
     assert agent.name == "rag"
-    assert agent.agent_card.skills[0].id == "answer_from_company_documents"
+    assert agent.agent_card.skills[0].id == "answer_regulation_and_policy_questions"
 
 
 async def test_discover_remote_agent_returns_none_for_an_unreachable_agent():
@@ -45,7 +45,7 @@ async def test_discover_remote_agent_returns_none_for_an_unreachable_agent():
         raise httpx.ConnectError("connection refused (simulated)")
 
     httpx_client = httpx.AsyncClient(transport=httpx.MockTransport(_always_fails))
-    cfg = RemoteAgentConfig(name="actions", url="http://actions.test", relay_verbatim_on_success=False)
+    cfg = RemoteAgentConfig(name="credit_lookup", url="http://credit_lookup.test", relay_verbatim_on_success=False)
 
     agent = await discover_remote_agent(cfg, httpx_client=httpx_client)
 
@@ -63,7 +63,7 @@ async def test_call_remote_agent_round_trips_text_and_uses_the_agents_relay_verb
         relay_verbatim_on_success=True,
     )
 
-    tool_result = await call_remote_agent(agent, "what is Pete's favorite subject?")
+    tool_result = await call_remote_agent(agent, "提前清償要付違約金嗎？")
 
     assert tool_result == {"output": "the answer", "relay_verbatim": True}
 
@@ -84,28 +84,28 @@ async def test_call_remote_agent_forces_relay_verbatim_false_when_the_agent_task
 
 
 # The two tests below exercise call_remote_agent's history_messages param
-# against a real Actions-backed fake server specifically -- RAG's executor
+# against a real Credit Lookup-backed fake server specifically -- RAG's executor
 # never reads the metadata field these attach, so RAG can't tell the
-# difference; Actions' executor is what actually round-trips it back into
-# messages (see tools/actionsTool/a2a/agent_executor.py).
+# difference; Credit Lookup's executor is what actually round-trips it back into
+# messages (see tools/creditLookupTool/a2a/agent_executor.py).
 async def test_call_remote_agent_attaches_history_metadata_when_history_is_given():
 
     received_messages_sink = {"messages": None}
     agent = await build_fake_remote_agent(
-        "actions",
-        ActionsAgentExecutor(build_fake_actions_subgraph(received_messages_sink=received_messages_sink)),
-        build_actions_agent_card,
+        "credit_lookup",
+        CreditLookupAgentExecutor(build_fake_credit_lookup_subgraph(received_messages_sink=received_messages_sink)),
+        build_credit_lookup_agent_card,
         relay_verbatim_on_success=False,
     )
 
     history = [HumanMessage(content="first message"), AIMessage(content="canned reply")]
-    await call_remote_agent(agent, "note down your previous answer", history)
+    await call_remote_agent(agent, "他最近有逾期嗎？", history)
 
     received = received_messages_sink["messages"]
     assert [(type(m).__name__, m.content) for m in received] == [
         ("HumanMessage", "first message"),
         ("AIMessage", "canned reply"),
-        ("HumanMessage", "note down your previous answer"),
+        ("HumanMessage", "他最近有逾期嗎？"),
     ]
 
 
@@ -113,9 +113,9 @@ async def test_call_remote_agent_omits_history_metadata_when_no_history_given():
 
     received_messages_sink = {"messages": None}
     agent = await build_fake_remote_agent(
-        "actions",
-        ActionsAgentExecutor(build_fake_actions_subgraph(received_messages_sink=received_messages_sink)),
-        build_actions_agent_card,
+        "credit_lookup",
+        CreditLookupAgentExecutor(build_fake_credit_lookup_subgraph(received_messages_sink=received_messages_sink)),
+        build_credit_lookup_agent_card,
         relay_verbatim_on_success=False,
     )
 
@@ -125,3 +125,18 @@ async def test_call_remote_agent_omits_history_metadata_when_no_history_given():
     assert [(type(m).__name__, m.content) for m in received] == [
         ("HumanMessage", "a message with no history"),
     ]
+
+
+async def test_call_remote_agent_attaches_caller_metadata_when_given():
+
+    received_caller_sink = {"caller": None}
+    agent = await build_fake_remote_agent(
+        "credit_lookup",
+        CreditLookupAgentExecutor(build_fake_credit_lookup_subgraph(received_caller_sink=received_caller_sink)),
+        build_credit_lookup_agent_card,
+        relay_verbatim_on_success=True,
+    )
+
+    await call_remote_agent(agent, "王大明有沒有逾期紀錄？", caller={"user_id": "wang01", "role": "sales"})
+
+    assert received_caller_sink["caller"] == {"user_id": "wang01", "role": "sales"}

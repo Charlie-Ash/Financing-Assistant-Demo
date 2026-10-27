@@ -6,10 +6,12 @@ A locally-hosted, multi-agent knowledge assistant built on **Google's Agent-to-A
 
 A2ASystem is an orchestrator ("Secretary") that routes each user message to the right specialist agent using vLLM guided/structured decoding, rather than a hand-parsed prompt:
 
-- **RAG Agent** — answers questions from a company's own documents (PDF ingestion → vector search → grounded answer).
-- **Actions Agent** — turns a request into a saved note on disk.
+- **Regulation & Policy Agent** (`rag`) — answers questions about Taiwanese financing law (動產擔保交易法, 消費者保護法, 個人資料保護法, 洗錢防制法) and internal policies, citing the exact article (《法規名》第X條) for every claim.
+- **Credit Lookup Agent** (`credit_lookup`) — looks up a customer's contracts, payments and late payments in a synthetic SQLite database and summarises them, showing only what the caller's role (`sales` or `credit`) may see, with ID numbers and phones masked. It never approves or rejects credit.
 
 Each agent is its own long-running process, and the orchestrator talks to them over the network using the A2A protocol rather than calling them as local functions. All of them generate text through **one shared vLLM server** (see [Architecture](#architecture)).
+
+> **Branch `gemini-backend`:** this branch adds an option to have any agent generate text through **Google's Gemini API** instead of the local vLLM server, chosen per agent in its `.env`. `main` stays local-only. See [Using the Gemini API](#using-the-gemini-api).
 
 This repository is also the codebase behind an ongoing case-study research paper (submitted to **ICS2026**) on incrementally promoting a local multi-agent assistant onto a real networked agent protocol on constrained, single-GPU consumer hardware, and measuring what that promotion actually costs in latency, routing accuracy, and VRAM. See [Project evolution & branches](#project-evolution--branches) below.
 
@@ -21,16 +23,16 @@ One vLLM server process holds the GPU's LLM, and three independent agent process
 |---|---|---|---|
 | **LLM server** | The only process that loads an LLM: one Chinese-capable FP8 model, served as `hotai-llm` | `src/llm/serve.py` | `http://0.0.0.0:8000/v1` |
 | **Orchestrator** | User-facing REPL; A2A **client**; decides which agent to call and composes the final reply | `src/main.py` | (local, stdin/stdout) |
-| **RAG Agent** | A2A **server**; answers from ingested documents | `src/tools/ragTool/a2a/a2a_server.py` | `http://0.0.0.0:8001` |
-| **Actions Agent** | A2A **server**; writes notes to disk | `src/tools/actionsTool/a2a/a2a_server.py` | `http://0.0.0.0:8002` |
+| **Regulation & Policy Agent** | A2A **server**; answers regulation/policy questions with article citations | `src/tools/ragTool/a2a/a2a_server.py` | `http://0.0.0.0:8001` |
+| **Credit Lookup Agent** | A2A **server**; role-filtered customer history lookups | `src/tools/creditLookupTool/a2a/a2a_server.py` | `http://0.0.0.0:8002` |
 
 Internally, every agent is its own compiled **LangGraph** graph:
 
 - **Orchestrator** — `decide_tool` (guided-decoding tool routing) → route to the local `default` tool or a discovered remote agent → `generate_response` → `update_memory`.
-- **RAG Agent** — `extract_query` → `retrieve` (Qdrant vector search for 20 candidates, then `bge-reranker-v2-m3` keeps the best 4) → `generate_answer`.
-- **Actions Agent** — `extract_request` → `generate_content` (guided-decoding note content + filename) → `save_note`.
+- **Regulation & Policy Agent** — `extract_query` → `retrieve` (Qdrant vector search for 20 candidates, then `bge-reranker-v2-m3` keeps the best 4) → `generate_answer` (labelled sources in the prompt; a code-built 參考來源 list and disclaimer appended to the answer).
+- **Credit Lookup Agent** — `check_caller` → `extract_request` (guided decoding: which customer, which aspect) → `resolve_customer` (fixed SQL; not found / several matches end here) → `lookup` (role filter + masking in code) → `summarise` (LLM summary over the masked facts, code-rendered facts block appended).
 
-At startup, the orchestrator discovers each configured remote agent's `AgentCard` over HTTP; an agent that's unreachable is simply excluded from routing for that session rather than causing a crash. Since the Actions agent needs conversation context (e.g. "note down your previous answer") but lives in a different process, the orchestrator attaches a slice of recent chat history to the outgoing A2A message's metadata, and the remote agent reconstructs it on its side.
+At startup, the orchestrator discovers each configured remote agent's `AgentCard` over HTTP; an agent that's unreachable is simply excluded from routing for that session rather than causing a crash. Since the Credit Lookup agent needs conversation context (e.g. 「他最近有逾期嗎？」 after a question about 王大明) and the caller's identity but lives in a different process, the orchestrator attaches a slice of recent chat history and the caller (`{user_id, role}`, from `main.py --user/--role`) to the outgoing A2A message's metadata, and the remote agent reconstructs both on its side.
 
 ### One shared LLM server
 
@@ -59,7 +61,7 @@ This replaces the earlier design, where each agent loaded its own vLLM engine. T
 | Desktop | ~0.2 |
 | **Total / margin** | **~28.7 / +3.1** |
 
-The orchestrator, the Actions agent and any future agent add about 0 GiB. If the margin is tight, set `RAG_EMBED_DEVICE=cpu` (frees 2.7 GiB) or serve `qwen3-8b-fp8` (frees about 6.7 GiB). These figures are estimates from earlier measurements; confirm them with `nvidia-smi` on the box.
+The orchestrator, the Credit Lookup agent and any future agent add about 0 GiB. If the margin is tight, set `RAG_EMBED_DEVICE=cpu` (frees 2.7 GiB) or serve `qwen3-8b-fp8` (frees about 6.7 GiB). These figures are estimates from earlier measurements; confirm them with `nvidia-smi` on the box.
 
 ### State and memory
 
@@ -76,10 +78,13 @@ A2ASystem/
 │   ├── routing_zh.jsonl          # Experiment 2 routing questions, in Traditional Chinese
 │   ├── run_routing_eval.py       # routing accuracy + Simplified-leakage per served model
 │   ├── run_rag_qa.py             # collects RAG answers into a CSV for rubric scoring
-│   └── rag_qa_zh.example.jsonl   # template for the company-specific RAG QA set
-├── data/                         # runtime data (mostly generated at run time)
-│   └── Test_PDF.pdf              # sample document for RAG ingestion
-│   # created at runtime: chat_log/, checkpoints/, notes/
+│   └── rag_qa_zh.jsonl           # 20 regulation/policy QA pairs with reference answers and source articles
+├── data/                         # documents + runtime data
+│   ├── regulations/              # what the regulation agent answers from (RAG_DATA_DIR)
+│   │   ├── laws/*.json           # 4 laws from law.moj.gov.tw (python -m tools.ragTool.fetch_laws)
+│   │   └── policies/*.md         # fictional demo SOPs (one superseded v1 kept to show versioning)
+│   ├── Test_PDF.pdf              # old sample document, no longer ingested
+│   # created at runtime: chat_log/, checkpoints/, credit/ (synthetic customer DB + audit log)
 ├── src/
 │   ├── main.py                   # CLI entry point (Orchestrator REPL)
 │   ├── chat_history.py           # shared LangChain-messages <-> wire-format helpers
@@ -111,15 +116,17 @@ A2ASystem/
 │       ├── base.py               # Tool protocol + ToolResult contract
 │       ├── gpu_utils.py          # VRAM pre-flight check (run by llm/serve.py)
 │       ├── defaultTool/          # trivial in-process fallback tool
-│       ├── ragTool/              # standalone RAG A2A agent (own process)
+│       ├── ragTool/              # standalone Regulation & Policy A2A agent (own process)
 │       │   ├── config.py
 │       │   ├── .env.example      # copy to .env in this folder to override defaults (see Configuration)
+│       │   ├── fetch_laws.py     # refreshes data/regulations/laws/ from law.moj.gov.tw
 │       │   ├── rag/              # dataIngestion, userQuery, models (embedding + reranker), graph, state, tool_class
 │       │   └── a2a/              # a2a_server.py, agent_executor.py
-│       └── actionsTool/          # standalone Actions A2A agent (own process)
+│       └── creditLookupTool/     # standalone Credit Lookup A2A agent (own process)
 │           ├── config.py
 │           ├── .env.example      # copy to .env in this folder to override defaults (see Configuration)
-│           ├── actions/          # noteWriter, note_schema, graph, state, tool_class
+│           ├── seed_db.py        # builds the synthetic SQLite customer database (fixed seed)
+│           ├── credit_lookup/    # datasource (fixed queries), policy (roles + masking), audit, graph, state, tool_class
 │           └── a2a/              # a2a_server.py, agent_executor.py
 └── tests/
     ├── fake_dependencies.py      # GPU-free, network-free fakes for testing
@@ -136,9 +143,9 @@ This repository documents three incremental phases of the same system, each a de
 |---|---|---|
 | **System I** | [`guided-decoding-system`](../../tree/guided-decoding-system) | The original hand-rolled, single-process orchestrator: vLLM guided/structured decoding drives tool routing directly, with a flat markdown file as memory. |
 | **System II** | [`lang-graph-intergration-system`](../../tree/lang-graph-intergration-system) | The same control flow re-expressed as an explicit LangGraph `StateGraph` (supervisor pattern). RAG is promoted to a compiled subgraph and a checkpointer adds real graph-state chat history — still a single process. |
-| **System III** | `main` (this branch) | RAG and a new Actions tool are promoted out-of-process into standalone agents speaking the A2A protocol. The orchestrator becomes a genuine A2A client with cross-process memory and persistent checkpointing. |
+| **System III** | `main` (this branch) | RAG and a second agent (originally note-writing, since replaced by the Credit Lookup agent) are promoted out-of-process into standalone agents speaking the A2A protocol. The orchestrator becomes a genuine A2A client with cross-process memory and persistent checkpointing. |
 
-Each phase keeps the same underlying scenario (route a user request, answer from documents, or save a note) so the cost of each architectural step — latency, routing accuracy, GPU memory — can be measured and compared directly.
+Each phase keeps the same underlying scenario (route a user request to the right agent, or answer directly) so the cost of each architectural step — latency, routing accuracy, GPU memory — can be measured and compared directly.
 
 ## Environment & requirements
 
@@ -165,9 +172,46 @@ pip install torch torchvision torchaudio --index-url https://download.pytorch.or
 
 Everything above gets the code and dependencies installed with sensible defaults already built in — you don't strictly need to touch any config to run the project. See [Configuration](#configuration) below if you want to change a model, a port, a VRAM budget, or anything else.
 
+## Regulation documents
+
+The regulation agent answers only from the documents under `RAG_DATA_DIR` (default `data/regulations/`):
+
+- **Laws** (`laws/*.json`): 動產擔保交易法, 消費者保護法, 個人資料保護法 and 洗錢防制法, taken from the Ministry of Justice's open-data download. Each article is indexed separately with its chapter, amendment date and a link to that article on law.moj.gov.tw. Deleted articles are skipped. A law whose newest amendments don't yet have a start date (currently 個資法) gets a warning on every citation.
+- **Policies** (`policies/*.md`): **fictional demo SOPs**, clearly marked 【示範用虛構文件】. Each file starts with a `title`/`version`/`effective_date`/`superseded` header and uses `## 第X條 標題` sections. Files marked `superseded: true` are kept for the record but never indexed.
+- **Any `*.pdf`** in the folder is ingested as plain text, without article-level citations.
+
+To update the laws, or add one (edit `LAWS` in `src/tools/ragTool/fetch_laws.py`):
+
+```bash
+cd src
+python -m tools.ragTool.fetch_laws      # rewrites data/regulations/laws/*.json
+rm -rf tools/ragTool/qdrant_db          # the index is only built when missing, so delete it after any document change
+```
+
+## Credit Lookup agent
+
+Answers questions about one customer's history with the company — 「王大明有沒有逾期紀錄？」, 「查一下 C0003 的合約」, 「他最近一年繳款正常嗎？」 — from a **synthetic** SQLite database. No real customer data is used.
+
+- **Data:** `python -m tools.creditLookupTool.seed_db` (or the agent itself on first start) builds `data/credit/credit_demo.db` from a fixed random seed: 30 customers, ~37 contracts (車貸 / 殘值型車貸 / 租賃), ~1,000 payment rows, measured from the date the file was built. Demo customers: 王大明 (clean record), 陳美玲 (two late payments), 林志強 (two instalments overdue, risk note), and two customers named 王志明. National IDs are random and deliberately fail the official checksum.
+- **No text-to-SQL:** the LLM only extracts *who* and *what* (structured output); fixed, parameterised queries in `credit_lookup/datasource.py` fetch the data. A real CRM can replace SQLite by implementing the same four methods.
+- **Roles** (`python main.py --role sales|credit`, default `sales`), enforced in code before any LLM sees the data:
+
+  | | `sales` | `credit` |
+  |---|---|---|
+  | Name, customer since, branch, contracts and their status | ✓ | ✓ |
+  | National ID / phone | masked (`A******789`, `0912-***-678`) | masked |
+  | Monthly payment, outstanding balance | ✗ | ✓ |
+  | Late payments | 「近12個月有逾期紀錄：有／無」 only | count, max days late, each late period, currently overdue |
+  | Internal risk note | ✗ | ✓ |
+
+- **Exact facts:** the facts block is rendered by code, so numbers can't be hallucinated; the LLM writes only a short summary above it. Every reply ends with the access level used and 「本摘要僅供參考，不構成授信核准或拒絕之決定」.
+- **Audit:** each request appends a line to `data/credit/audit_log.jsonl` — user, role, question, outcome (`ok` / `not_found` / `ambiguous` / `no_customer` / `denied` / `error`), customer ids.
+- **Same name, several customers:** returns a masked candidate list and asks for the customer number; no record data.
+- The role is self-declared on the command line for the demo; real authentication is Phase 5. Enforcement already lives in the agent, so a real login only changes where the role comes from.
+
 ## Configuration
 
-The LLM server and each of the three agents (Orchestrator, RAG, Actions) read their own settings independently, in this order of priority: **a real OS environment variable** you've exported, then **that agent's own `.env` file**, then **the built-in default** baked into its `config.py`. You never have to set anything for the project to run — the built-in defaults are what's been used throughout development — but if you want to change a model, a port, or a GPU memory budget, a `.env` file is the easiest way.
+The LLM server and each of the three agents (Orchestrator, RAG, Credit Lookup) read their own settings independently, in this order of priority: **a real OS environment variable** you've exported, then **that agent's own `.env` file**, then **the built-in default** baked into its `config.py`. You never have to set anything for the project to run — the built-in defaults are what's been used throughout development — but if you want to change a model, a port, or a GPU memory budget, a `.env` file is the easiest way.
 
 **How to set one up:** each agent ships a `.env.example` right next to its `config.py`, listing every setting it accepts with its default already filled in (just commented out). Copy it to `.env` **in that same folder**, then uncomment and edit only the lines you actually want to change:
 
@@ -176,11 +220,11 @@ The LLM server and each of the three agents (Orchestrator, RAG, Actions) read th
 cp src/llm/.env.example src/llm/.env
 cp src/orchestrator/.env.example src/orchestrator/.env
 cp src/tools/ragTool/.env.example src/tools/ragTool/.env
-cp src/tools/actionsTool/.env.example src/tools/actionsTool/.env
+cp src/tools/creditLookupTool/.env.example src/tools/creditLookupTool/.env
 ```
 
 A few things worth knowing:
-- **Each agent has its own `.env`, not one shared file.** This matches how they actually run — three independent processes — so RAG's `.env` has no effect on the orchestrator or Actions, and vice versa.
+- **Each agent has its own `.env`, not one shared file.** This matches how they actually run — three independent processes — so RAG's `.env` has no effect on the orchestrator or Credit Lookup, and vice versa.
 - **`.env` files are never committed.** They're covered by `.gitignore`; only the `.env.example` templates are checked in. If you put a real API key or path in a `.env`, it stays local to your machine.
 - **A bad value fails immediately, not mysteriously later.** Every setting is type- and range-checked at process startup (e.g. a GPU memory fraction must be between 0 and 1, a port must be a valid port number). If you typo a value, you'll get a clear error naming the exact setting and the exact problem the moment you try to run that agent — not a confusing crash from inside vLLM several seconds in.
 - **A real environment variable always wins** over anything in `.env`, which always wins over the built-in default — so you can still do a one-off override (e.g. `RAG_A2A_PORT=8005 python -m tools.ragTool.a2a.a2a_server`) without touching any file.
@@ -189,8 +233,8 @@ A few things worth knowing:
 
 | Agent | Variable | Default | Purpose |
 |---|---|---|---|
-| Orchestrator | `REMOTE_AGENTS` | `rag@http://localhost:8001,actions@http://localhost:8002` | Which A2A agents the orchestrator discovers, as `name@url` pairs |
-| Orchestrator | `REMOTE_AGENTS_VERBATIM` | `rag` | Which agents' successful results are relayed to the user as-is instead of composed into a reply |
+| Orchestrator | `REMOTE_AGENTS` | `rag@http://localhost:8001,credit_lookup@http://localhost:8002` | Which A2A agents the orchestrator discovers, as `name@url` pairs |
+| Orchestrator | `REMOTE_AGENTS_VERBATIM` | `rag,credit_lookup` | Which agents' successful results are relayed to the user as-is instead of composed into a reply |
 | Orchestrator | `CHECKPOINT_DB_PATH` | `data/checkpoints/checkpoints.db` | Where the persistent LangGraph checkpointer writes conversation state |
 | Orchestrator | `REMOTE_AGENT_TIMEOUT_SECONDS` | `180` | How long the orchestrator waits for a remote agent's A2A response before giving up |
 | LLM server | `LLM_PROFILE` | `qwen3-14b-fp8` | Which model to serve (a key in `src/llm/profiles.py`) |
@@ -201,13 +245,22 @@ A few things worth knowing:
 | Every agent | `LLM_BASE_URL` | `http://localhost:8000/v1` | Where the agent reaches the LLM server |
 | Every agent | `LLM_TIMEOUT_SECONDS` | `120` | Per-request timeout for LLM calls |
 | Every agent | `LLM_STARTUP_WAIT_SECONDS` | `300` | How long the agent waits at startup for the server to finish loading |
+| Every agent | `LLM_PROVIDER` | `vllm` | `vllm` (shared local server) or `gemini` (Google's API, see [Using the Gemini API](#using-the-gemini-api)) |
+| Every agent | `LLM_GEMINI_MODEL` | `gemini-3.5-flash-lite` | Gemini model id, used when `LLM_PROVIDER=gemini` |
+| Every agent | `LLM_REASONING_EFFORT` | `minimal` | Gemini thinking level (`none`/`minimal`/`low`/`medium`/`high`); keep it as low as the model accepts |
+| Every agent | `GEMINI_API_KEY` | (none) | Gemini API key; required when `LLM_PROVIDER=gemini`. Keep it in the git-ignored `.env`, never in `.env.example` |
+| Every agent | `LLM_TRADITIONAL_MODE` | `s2twp` (`chars` for RAG) | Simplified→Traditional safety net: `s2twp` also converts mainland vocabulary; `chars` only fixes non-Traditional characters and never alters valid Traditional text, so quoted law stays exact |
 | RAG | `RAG_EMBEDDING_MODEL` | `BAAI/bge-m3` | Embedding model used to index and search documents |
-| RAG | `RAG_COLLECTION_NAME` | `my_docs` | Base Qdrant collection name; the embedding model is appended (`my_docs__bge-m3`), so switching models rebuilds the index |
+| RAG | `RAG_DATA_DIR` | `data/regulations` | Folder of documents to ingest (`laws/*.json`, `policies/*.md`, any `*.pdf`); relative paths resolve against the project root |
+| RAG | `RAG_COLLECTION_NAME` | `regulations` | Base Qdrant collection name; the embedding model is appended (`regulations__bge-m3`), so switching models rebuilds the index |
 | RAG | `RAG_RERANKER_MODEL` | `BAAI/bge-reranker-v2-m3` | Cross-encoder that re-scores retrieved chunks |
 | RAG | `RAG_EMBED_DEVICE` | `cuda` | Where the embedding and reranker run (`cuda` or `cpu`) |
 | RAG | `RAG_RETRIEVE_TOP_K` / `RAG_RERANK_TOP_N` | `20` / `4` | Vector-search candidates, and how many survive reranking into the prompt |
 | RAG | `RAG_A2A_HOST` / `RAG_A2A_PORT` | `0.0.0.0` / `8001` | RAG agent server bind address |
-| Actions | `ACTIONS_A2A_HOST` / `ACTIONS_A2A_PORT` | `0.0.0.0` / `8002` | Actions agent server bind address |
+| Credit Lookup | `CREDIT_LOOKUP_DB_PATH` | `data/credit/credit_demo.db` | Synthetic customer database (built automatically if missing) |
+| Credit Lookup | `CREDIT_LOOKUP_AUDIT_LOG_PATH` | `data/credit/audit_log.jsonl` | Append-only log of every lookup: who, role, question, outcome, customer ids |
+| Credit Lookup | `CREDIT_LOOKUP_PAYMENT_MONTHS` | `12` | How many months of payment history a lookup summarises |
+| Credit Lookup | `CREDIT_LOOKUP_A2A_HOST` / `CREDIT_LOOKUP_A2A_PORT` | `0.0.0.0` / `8002` | Credit Lookup agent server bind address |
 
 ## Running the project
 
@@ -222,18 +275,54 @@ python -m llm.serve                    # or: python -m llm.serve --profile qwen3
 cd src
 python -m tools.ragTool.a2a.a2a_server
 
-# Terminal 2 — Actions agent (http://0.0.0.0:8002)
+# Terminal 2 — Credit Lookup agent (http://0.0.0.0:8002)
 cd src
-python -m tools.actionsTool.a2a.a2a_server
+python -m tools.creditLookupTool.a2a.a2a_server
 
-# Terminal 3 — Orchestrator (REPL)
+# Terminal 3 — Orchestrator (REPL); --role sales (default) or credit
 cd src
-python main.py
+python main.py --user wang01 --role sales
 ```
 
 Type `bye` in the orchestrator REPL to exit (you'll be asked whether to save a summarized memory of the session).
 
 Want to change a model, a port, or a GPU memory budget first? See [Configuration](#configuration) above.
+
+## Using the Gemini API
+
+Any agent can generate text through Google's Gemini API instead of the local vLLM server. Gemini's OpenAI-compatible endpoint is used, so it goes through the same `ChatLLM` client (`src/llm/client.py`); graphs, prompts, the A2A protocol and the OpenCC safety net are unchanged. RAG embeddings and reranking still run locally; only text generation moves.
+
+**Modes** (set `LLM_PROVIDER` in each agent's own `.env`):
+
+| Mode | Orchestrator | RAG | Credit Lookup | Local VRAM |
+|---|---|---|---|---|
+| All-Gemini | gemini | gemini | gemini | ~2.7 GiB (RAG models on CUDA), or 0 with `RAG_EMBED_DEVICE=cpu`. No `llm.serve` needed |
+| Hybrid | gemini | vllm | gemini | the vLLM server plus RAG models |
+| All-local (`main`) | vllm | vllm | vllm | ~28.7 GiB, see the VRAM budget above |
+
+**Setup:**
+1. Create an API key at [aistudio.google.com](https://aistudio.google.com) → *Get API key*. Current keys start with `AQ.`.
+2. In each agent's `.env` that should use Gemini (`src/orchestrator/.env`, `src/tools/ragTool/.env`, `src/tools/creditLookupTool/.env`), add:
+   ```
+   LLM_PROVIDER=gemini
+   GEMINI_API_KEY=AQ...
+   # optional, defaults shown in each .env.example:
+   # LLM_GEMINI_MODEL=gemini-3.5-flash-lite
+   # LLM_REASONING_EFFORT=minimal
+   ```
+3. Check the key and model: `python evals/check_gemini.py` (from the repo root). It makes 4 small requests: one chat, three routing decisions.
+4. Start the agents and `main.py` as in [Running the project](#running-the-project), skipping `python -m llm.serve` if no agent uses `vllm`.
+
+**Models** (tested 2026-10-17; use exact ids, not `-preview`/`-latest`):
+- `gemini-3.5-flash-lite` (default): needs `LLM_REASONING_EFFORT=minimal` (it rejects `none`).
+- `gemini-3.1-flash-lite`, `gemini-3.5-flash`: accept `none`. The RAG `.env.example` suggests `gemini-3.5-flash` for its answers.
+- Compare candidates with `python evals/run_routing_eval.py --label <model> --delay 5`.
+
+**Things to know:**
+- **Cost:** free tier within AI Studio's per-model limits. On the paid tier, a REPL turn (3–4 calls) costs roughly US$0.002–0.01. Thinking tokens are billed as output, which is why `LLM_REASONING_EFFORT` defaults low. Set a budget alert in Google Cloud Billing before enabling billing.
+- **Errors:** 429 means your quota or rate limit is used up. 503 means the model is overloaded on Google's side. Both are retried automatically, then reported with a clear message.
+- **Privacy:** prompts, chat history and retrieved document text are sent to Google. On the free tier Google may use them to improve its products. Use test or synthetic documents only.
+- **Settings and branches:** the Gemini settings use their own variable names, so a `.env` set up for Gemini is ignored on `main`, which keeps using the local server.
 
 ## Choosing the model (evals)
 
@@ -250,7 +339,7 @@ It reports three things:
 
 Restart the server with each profile (`python -m llm.serve --profile ...`) and rerun. The agents don't need restarting.
 
-`evals/run_rag_qa.py` sends a QA set to the running RAG agent and writes a CSV to score against the rubric (Faithfulness 0–2 + Relevance 0–2). Before running it, copy `evals/rag_qa_zh.example.jsonl` to `evals/rag_qa_zh.jsonl` and fill in 20–30 questions grounded in the ingested documents. Results go to `evals/results/`, which is git-ignored.
+`evals/run_rag_qa.py` sends the 20 questions in `evals/rag_qa_zh.jsonl` to the running regulation agent and writes a CSV, with each reference answer and source article, to score against the rubric (Faithfulness 0–2 + Relevance 0–2). It includes one superseded-policy check and one question the documents can't answer. Results go to `evals/results/`, which is git-ignored.
 
 ## Testing
 

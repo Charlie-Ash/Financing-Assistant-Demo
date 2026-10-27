@@ -4,8 +4,9 @@
 # setting.
 #
 # No generation-model/VRAM settings live here any more: this agent
-# generates text through the shared LLM server (src/llm/). The embedding and
-# reranker models below still run inside this process.
+# generates text through the shared LLM server or the Gemini API
+# (LLM_PROVIDER, inherited from llm/settings.LLMClientSettings). The
+# embedding and reranker models below still run inside this process.
 import re
 from pathlib import Path
 from typing import Literal
@@ -22,15 +23,21 @@ AGENTSYSTEM_ROOT = RAGTOOL_DIR.parent.parent.parent
 # Qdrant's on-disk store lives inside this tool's own folder.
 QDRANT_DB_PATH = str(RAGTOOL_DIR / "qdrant_db")
 
-# Documents to ingest live in the project's shared top-level data/ folder.
-DATA_DIR = AGENTSYSTEM_ROOT / "data"
 
 
 class RagSettings(LLMClientSettings):
 
     model_config = SettingsConfigDict(env_file=str(RAGTOOL_DIR / ".env"), env_file_encoding="utf-8", extra="ignore")
 
-    rag_collection_name: str = "my_docs"
+    # Folder of documents to ingest: laws/*.json (fetched by
+    # `python -m tools.ragTool.fetch_laws`), policies/*.md and any *.pdf. A
+    # relative path is resolved against the project root, so a second copy of
+    # this agent can serve a different folder from its own .env.
+    rag_data_dir: Path = Path("data") / "regulations"
+    rag_collection_name: str = "regulations"
+    # Overrides the inherited default: answers quote laws and policies, and
+    # s2twp would rewrite valid official characters (占 -> 佔, 致 -> 緻).
+    llm_traditional_mode: Literal["s2twp", "chars"] = "chars"
     rag_embedding_model: str = "BAAI/bge-m3"
     # Second-stage cross-encoder: re-scores the top rag_retrieve_top_k
     # vector hits against the query and keeps the best rag_rerank_top_n.
@@ -58,11 +65,13 @@ RERANK_TOP_N = settings.rag_rerank_top_n
 
 # The embedding model is part of the collection name, so switching models
 # builds a fresh collection instead of silently querying vectors from a
-# different embedding space (e.g. "my_docs__bge-m3").
+# different embedding space (e.g. "regulations__bge-m3").
 COLLECTION_NAME = (
     f"{settings.rag_collection_name}__"
     f"{re.sub(r'[^A-Za-z0-9._-]+', '-', EMBEDDING_MODEL.split('/')[-1])}"
 )
+
+DATA_DIR = settings.rag_data_dir if settings.rag_data_dir.is_absolute() else AGENTSYSTEM_ROOT / settings.rag_data_dir
 
 RAG_A2A_HOST = settings.rag_a2a_host
 RAG_A2A_PORT = settings.rag_a2a_port

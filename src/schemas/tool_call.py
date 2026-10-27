@@ -5,7 +5,7 @@ from typing import Literal
 class ToolCall(BaseModel):
 
     # Which of the tools registered in ToolRouter to use. Not a Literal[...]
-    # anymore -- once "default" is local but "rag"/"actions" (and whatever
+    # anymore -- once "default" is local but "rag"/"credit_lookup" (and whatever
     # else gets configured) are remote A2A agents, the valid set is only
     # known once ToolRouter has discovered them at startup, not at import
     # time. The guided-decoding schema (see schemas/tool_schema.py) still

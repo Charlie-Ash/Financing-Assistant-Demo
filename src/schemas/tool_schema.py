@@ -14,4 +14,9 @@ def build_tool_schema(tool_names: Sequence[str]) -> dict:
 
     schema = ToolCall.model_json_schema()
     schema["properties"]["tool"]["enum"] = list(tool_names)
+    # pydantic writes Literal["run"] as {"const": "run"}. vLLM enforces
+    # const, but Gemini's structured output ignores it (it returned
+    # "respond"/"small_talk" in testing) while respecting enum -- so state
+    # the same constraint both ways.
+    schema["properties"]["action"]["enum"] = ["run"]
     return schema

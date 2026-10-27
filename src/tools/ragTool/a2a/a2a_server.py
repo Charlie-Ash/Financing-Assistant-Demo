@@ -28,23 +28,25 @@ from tools.ragTool.config import RAG_A2A_HOST, RAG_A2A_PORT
 def build_agent_card(host: str, port: int) -> AgentCard:
 
     skill = AgentSkill(
-        id="answer_from_company_documents",
-        name="Answer questions from company documents",
+        id="answer_regulation_and_policy_questions",
+        name="Answer regulation and internal-policy questions",
         description=(
-            "針對公司已匯入的文件資料（如產品說明、貸款條款、合約、內部規章）回答問題。"
-            "會先檢索最相關的段落，再根據這些段落產生有依據的回答。"
-            "凡是答案需要從公司文件中查找的問題，都應使用此工具。"
+            "查詢法規與公司內部作業規範並回答問題，答案附上條號出處（《法規名》第X條）。"
+            "涵蓋：動產擔保交易法、消費者保護法、個人資料保護法、洗錢防制法，"
+            "以及公司內部規範（提前清償、車貸申請文件、逾期帳款處理、個人資料處理）。"
+            "凡是詢問法律規定、法條內容、公司規定或作業流程的問題，都應使用此工具。"
         ),
-        tags=["rag", "documents", "question-answering"],
+        tags=["rag", "regulation", "policy", "citation"],
         examples=[
-            "我們的提前還款違約金怎麼計算？",
-            "請摘要新進業務的入職檢查清單。",
+            "提前清償要付違約金嗎？",
+            "動產擔保交易法對附條件買賣有什麼規定？",
+            "個資法規定蒐集個人資料時要告知客戶哪些事項？",
         ],
     )
 
     return AgentCard(
-        name="RAG Document Agent",
-        description="獨立代理：以檢索增強生成(RAG)回答公司文件相關問題。",
+        name="Regulation & Policy Agent",
+        description="獨立代理：檢索法規與公司內部規範，回答問題並附上條號出處。",
         url=f"http://{host}:{port}/",
         version="0.1.0",
         default_input_modes=["text/plain"],

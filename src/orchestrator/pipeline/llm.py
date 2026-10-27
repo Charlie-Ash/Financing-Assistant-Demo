@@ -76,6 +76,12 @@ class OrchestratorLLM():
 
         # tool_result is a ToolResult (see tools/base.py); every tool always
         # returns one, so no None-handling is needed here anymore.
+        # A verbatim result (e.g. the regulation agent's cited answer) is
+        # already the reply: passing it through the LLM again could only
+        # trim or reword it -- including its source list and disclaimer.
+        if tool_result["relay_verbatim"]:
+            return tool_result["output"]
+
         messages = build_response_prompt(user_message, history_messages, tool_call, tool_result)
 
         return self.llm.chat(messages, self.response_sampling).strip()

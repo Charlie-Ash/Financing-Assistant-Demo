@@ -15,8 +15,9 @@ __pycache__/
 # RAG tool's local Qdrant vector store
 qdrant_db/
 
-# Notes tool's saved .txt files notes
-data/notes/
+# Credit Lookup agent's synthetic database (rebuilt from seed_db.py) and
+# its audit log of who looked up whom
+data/credit/
 
 # Eval run outputs (see evals/)
 evals/results/

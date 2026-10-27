@@ -70,17 +70,10 @@ def build_tool_decision_prompt(user_message, history_messages, tool_descriptions
 
 def build_response_prompt(user_message, history_messages, tool_call, tool_result):
 
-    # Second-stage prompt: Plain-text reply.
-    # tool_result is a ToolResult (see tools/base.py): {"output": str, "relay_verbatim": bool}.
-    if tool_result["relay_verbatim"]:
-        # The tool already produced a complete, user-ready answer (e.g. RAG) --
-        # tell the model to show it as-is instead of paraphrasing it away.
-        instruction = (
-            "下方的工具結果已經是一份完整的回答。請原封不動地轉達給使用者，"
-            "不要改寫或摘要，然後詢問使用者接下來還需要什麼協助。"
-        )
-    else:
-        instruction = "請根據下方的工具結果，給使用者一個簡潔且有幫助的回覆。"
+    # Second-stage prompt: Plain-text reply. Only used for results that need
+    # composing -- relay_verbatim results are returned as-is by
+    # OrchestratorLLM.generate_response without an LLM call.
+    instruction = "請根據下方的工具結果，給使用者一個簡潔且有幫助的回覆。"
 
     SYSTEM_PROMPT = f"""
         你是同一位協調者，現在要直接回覆使用者。

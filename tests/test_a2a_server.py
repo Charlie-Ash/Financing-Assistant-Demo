@@ -31,8 +31,8 @@ def test_agent_card_advertises_the_rag_skill():
 
     card = build_agent_card(host="localhost", port=8001)
 
-    assert card.name == "RAG Document Agent"
-    assert [skill.id for skill in card.skills] == ["answer_from_company_documents"]
+    assert card.name == "Regulation & Policy Agent"
+    assert [skill.id for skill in card.skills] == ["answer_regulation_and_policy_questions"]
     assert card.capabilities.streaming is False
 
 
@@ -44,5 +44,5 @@ def test_agent_card_is_served_at_the_well_known_discovery_url():
 
     assert response.status_code == 200
     body = response.json()
-    assert body["name"] == "RAG Document Agent"
-    assert body["skills"][0]["id"] == "answer_from_company_documents"
+    assert body["name"] == "Regulation & Policy Agent"
+    assert body["skills"][0]["id"] == "answer_regulation_and_policy_questions"

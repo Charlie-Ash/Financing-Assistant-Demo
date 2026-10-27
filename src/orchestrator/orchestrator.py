@@ -5,6 +5,8 @@ from contextlib import AsyncExitStack
 from pathlib import Path
 from typing import Optional
 
+import aiosqlite
+from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 
 from orchestrator import config, memory_manager
@@ -13,9 +15,21 @@ from orchestrator.pipeline.llm import OrchestratorLLM
 from orchestrator.pipeline.graph import build_graph
 from schemas.tool_schema import build_tool_schema
 
+# Project types stored in checkpointed graph state (OrchestratorState.tool_call).
+# LangGraph only deserializes types it's been told about: unlisted ones log a
+# "Deserializing unregistered type" warning today and will be blocked in a
+# future version, which would break resuming a conversation after a restart.
+CHECKPOINT_ALLOWED_TYPES = [("schemas.tool_call", "ToolCall")]
+
+
+def build_checkpoint_serializer() -> JsonPlusSerializer:
+
+    return JsonPlusSerializer(allowed_msgpack_modules=CHECKPOINT_ALLOWED_TYPES)
+
+
 class Orchestrator():
 
-    def __init__(self, tool_router: ToolRouter, llm: OrchestratorLLM, graph, thread_id: str, exit_stack: AsyncExitStack):
+    def __init__(self, tool_router: ToolRouter, llm: OrchestratorLLM, graph, thread_id: str, exit_stack: AsyncExitStack, caller: dict):
 
         self.tool_router = tool_router
         self.llm = llm
@@ -36,13 +50,18 @@ class Orchestrator():
         # with` block.
         self._exit_stack = exit_stack
 
+        # Who this session acts as ({"user_id", "role"}, from main.py's
+        # --user/--role). Sent with every turn; the Credit Lookup agent
+        # decides what customer data to return from it.
+        self.caller = caller
+
     # Async factory replacing what used to be all of __init__: ToolRouter.discover()
     # has to make real network calls (fetching each remote agent's AgentCard),
     # so building an Orchestrator is no longer a synchronous operation. This
     # is the only place ToolRouter/OrchestratorLLM/the graph get constructed --
     # __init__ above just wires already-built pieces together.
     @classmethod
-    async def create(cls) -> "Orchestrator":
+    async def create(cls, caller: dict) -> "Orchestrator":
 
         tool_router = ToolRouter()
         await tool_router.discover()
@@ -64,17 +83,19 @@ class Orchestrator():
         # for the whole session rather than one block here (closed later via
         # aclose(), called from main.py's "bye" flow).
         config.CHECKPOINT_DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+        # The connection is opened here rather than via
+        # AsyncSqliteSaver.from_conn_string(), which has no way to pass the
+        # serializer that registers this project's checkpointed types.
         exit_stack = AsyncExitStack()
-        checkpointer = await exit_stack.enter_async_context(
-            AsyncSqliteSaver.from_conn_string(str(config.CHECKPOINT_DB_PATH))
-        )
+        conn = await exit_stack.enter_async_context(aiosqlite.connect(str(config.CHECKPOINT_DB_PATH)))
+        checkpointer = AsyncSqliteSaver(conn, serde=build_checkpoint_serializer())
 
         # The turn sequence (decide tool -> run tool -> generate reply ->
         # update memory) now lives in graph.py as a LangGraph StateGraph
         # instead of being written out inline here.
         graph = build_graph(llm, tool_router, checkpointer=checkpointer)
 
-        return cls(tool_router, llm, graph, thread_id, exit_stack)
+        return cls(tool_router, llm, graph, thread_id, exit_stack, caller)
 
     # Runs one full turn through the graph built above and returns the final
     # reply text. Everything this used to do step-by-step -- tool decision,
@@ -90,7 +111,7 @@ class Orchestrator():
         # module-level `orchestrator.config` import above within this
         # function's scope.
         invoke_config = {"configurable": {"thread_id": self.thread_id}}
-        result = await self.graph.ainvoke({"user_message": user_message}, config=invoke_config)
+        result = await self.graph.ainvoke({"user_message": user_message, "caller": self.caller}, config=invoke_config)
         return result["final_response"]
 
     # Called from main.py's "bye" flow once the user has answered the save prompt.

@@ -1,13 +1,18 @@
 # Model-selection eval: routing accuracy + native Traditional Chinese quality
-# of whatever model the shared LLM server is currently serving.
+# of whatever model the orchestrator is configured to use.
 #
 #   # on the GPU box, from the repo root, with the LLM server running:
 #   python evals/run_routing_eval.py --label qwen3-14b-fp8
 #
 # Repeat per candidate by restarting the server with another profile
 # (`python -m llm.serve --profile qwen3-8b-fp8` from src/) -- nothing else
-# needs restarting, and no RAG/Actions servers are needed at all: the
+# needs restarting, and no RAG/Credit Lookup servers are needed at all: the
 # routing prompt is built from their agent cards locally.
+#
+# With LLM_PROVIDER=gemini in src/orchestrator/.env no server is needed;
+# pick the model with LLM_GEMINI_MODEL, and add --delay to stay under the
+# free tier's requests-per-minute limit:
+#   python evals/run_routing_eval.py --label gemini-3.5-flash-lite --delay 5
 #
 # Metrics:
 #   - routing accuracy, overall and per category (evals/routing_zh.jsonl,
@@ -36,7 +41,7 @@ from orchestrator.agents.tool_router import DEFAULT_TOOL_DESCRIPTION, describe_a
 from orchestrator.pipeline.llm import OrchestratorLLM
 from schemas.tool_call import ToolCall
 from schemas.tool_schema import build_tool_schema
-from tools.actionsTool.a2a.a2a_server import build_agent_card as build_actions_agent_card
+from tools.creditLookupTool.a2a.a2a_server import build_agent_card as build_credit_lookup_agent_card
 from tools.ragTool.a2a.a2a_server import build_agent_card as build_rag_agent_card
 
 EVALS_DIR = Path(__file__).resolve().parent
@@ -56,6 +61,7 @@ def main():
     parser = argparse.ArgumentParser(description="Routing accuracy + Traditional Chinese leakage eval.")
     parser.add_argument("--label", required=True, help="name for this run, e.g. the served profile")
     parser.add_argument("--questions", type=Path, default=EVALS_DIR / "routing_zh.jsonl")
+    parser.add_argument("--delay", type=float, default=0.0, help="seconds to wait between LLM calls (API rate limits)")
     args = parser.parse_args()
 
     questions = load_jsonl(args.questions)
@@ -63,16 +69,11 @@ def main():
     tool_descriptions = [
         DEFAULT_TOOL_DESCRIPTION,
         describe_agent_card("rag", build_rag_agent_card("localhost", 0)),
-        describe_agent_card("actions", build_actions_agent_card("localhost", 0)),
+        describe_agent_card("credit_lookup", build_credit_lookup_agent_card("localhost", 0)),
     ]
     tool_schema = build_tool_schema([tool["name"] for tool in tool_descriptions])
 
-    chat_llm = ChatLLM(
-        config.settings.llm_base_url,
-        config.settings.llm_served_name,
-        config.settings.llm_timeout_seconds,
-        normalize_traditional=False,
-    )
+    chat_llm = ChatLLM.from_settings(config.settings, normalize_traditional=False)
     chat_llm.wait_until_ready(config.settings.llm_startup_wait_seconds)
     llm = OrchestratorLLM(tool_schema, chat_llm=chat_llm)
 
@@ -94,6 +95,7 @@ def main():
             "error": error,
             "latency_s": round(latency, 3),
         })
+        time.sleep(args.delay)
 
     leakage_rows = []
     for q in questions:
@@ -109,6 +111,7 @@ def main():
             "cjk_chars": cjk_char_count(response),
             "leaked_chars": simplified_leakage_chars(response),
         })
+        time.sleep(args.delay)
 
     categories = sorted({row["category"] for row in routing_rows})
     latencies = [row["latency_s"] for row in routing_rows]
@@ -117,7 +120,8 @@ def main():
 
     summary = {
         "label": args.label,
-        "served_name": config.settings.llm_served_name,
+        "provider": chat_llm.provider,
+        "model": chat_llm.served_name,
         "routing_accuracy": sum(row["correct"] for row in routing_rows) / len(routing_rows),
         "accuracy_by_category": {
             category: (

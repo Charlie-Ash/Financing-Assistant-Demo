@@ -1,23 +1,23 @@
-{"id": "rag-01", "category": "clear-rag", "question": "彼特的祖父叫什麼名字？", "expected": "rag"}
-{"id": "rag-02", "category": "clear-rag", "question": "彼特十四歲生日收到了什麼禮物？", "expected": "rag"}
-{"id": "rag-03", "category": "clear-rag", "question": "彼特讀的是哪一所大學？", "expected": "rag"}
-{"id": "rag-04", "category": "clear-rag", "question": "彼特在大學主修什麼？", "expected": "rag"}
-{"id": "rag-05", "category": "clear-rag", "question": "彼特畢業後在哪家公司工作？", "expected": "rag"}
-{"id": "rag-06", "category": "clear-rag", "question": "暴風雨期間，彼特連續協調搶修了幾個小時？", "expected": "rag"}
-{"id": "rag-07", "category": "clear-rag", "question": "彼特學過哪些樂器？", "expected": "rag"}
-{"id": "rag-08", "category": "clear-rag", "question": "彼特回到梅羅灣後買了什麼？", "expected": "rag"}
-{"id": "rag-09", "category": "clear-rag", "question": "彼特喜歡拍攝哪一類的地點？", "expected": "rag"}
-{"id": "rag-10", "category": "clear-rag", "question": "彼特每天早上幾點起床？起床後第一件事做什麼？", "expected": "rag"}
-{"id": "act-01", "category": "clear-actions", "question": "請幫我存一則筆記，提醒我明天早上打電話給牙醫。", "expected": "actions"}
-{"id": "act-02", "category": "clear-actions", "question": "記下來：團隊會議改到星期四下午三點。", "expected": "actions"}
-{"id": "act-03", "category": "clear-actions", "question": "做個筆記：今天下班後去買菜，牛奶、雞蛋和麵包。", "expected": "actions"}
-{"id": "act-04", "category": "clear-actions", "question": "把這個存成筆記：記得星期五前交季報。", "expected": "actions"}
-{"id": "act-05", "category": "clear-actions", "question": "幫我記下彼特最喜歡的嗜好是修復古董錶，我之後要參考。", "expected": "actions"}
-{"id": "act-06", "category": "clear-actions", "question": "寫個提醒：每週二和週五要澆花。", "expected": "actions"}
-{"id": "act-07", "category": "clear-actions", "question": "幫我記錄會議內容：討論了預算刪減，後續步驟待核准。", "expected": "actions"}
-{"id": "act-08", "category": "clear-actions", "question": "請建立一則標題為購物清單的筆記，內容有白米、雞肉、菠菜。", "expected": "actions"}
-{"id": "act-09", "category": "clear-actions", "question": "快速記一下：下週要跟莎拉確認專案時程。", "expected": "actions"}
-{"id": "act-10", "category": "clear-actions", "question": "寫一則給自己的筆記：週日讀書會前要讀完第五章。", "expected": "actions"}
+{"id": "rag-01", "category": "clear-rag", "question": "提前清償貸款要付違約金嗎？怎麼計算？", "expected": "rag"}
+{"id": "rag-02", "category": "clear-rag", "question": "動產擔保交易法對附條件買賣有什麼規定？", "expected": "rag"}
+{"id": "rag-03", "category": "clear-rag", "question": "個資法規定蒐集客戶個人資料時要告知哪些事項？", "expected": "rag"}
+{"id": "rag-04", "category": "clear-rag", "question": "消保法對定型化契約的審閱期有什麼規定？", "expected": "rag"}
+{"id": "rag-05", "category": "clear-rag", "question": "申請車貸需要準備哪些文件？", "expected": "rag"}
+{"id": "rag-06", "category": "clear-rag", "question": "客戶逾期幾天後可以開始電話催收？", "expected": "rag"}
+{"id": "rag-07", "category": "clear-rag", "question": "洗錢防制法所稱的洗錢行為包括哪些？", "expected": "rag"}
+{"id": "rag-08", "category": "clear-rag", "question": "動產抵押的標的物被債務人出賣時，債權人可以怎麼做？", "expected": "rag"}
+{"id": "rag-09", "category": "clear-rag", "question": "公司規定業務人員可以查詢客戶的哪些資料？", "expected": "rag"}
+{"id": "rag-10", "category": "clear-rag", "question": "分期付款買賣契約依消保法應該載明哪些事項？", "expected": "rag"}
+{"id": "crd-01", "category": "clear-credit_lookup", "question": "王大明有沒有逾期紀錄？", "expected": "credit_lookup"}
+{"id": "crd-02", "category": "clear-credit_lookup", "question": "查一下 C0003 的合約狀況。", "expected": "credit_lookup"}
+{"id": "crd-03", "category": "clear-credit_lookup", "question": "陳美玲最近一年繳款正常嗎？", "expected": "credit_lookup"}
+{"id": "crd-04", "category": "clear-credit_lookup", "question": "林志強現在逾期幾天了？", "expected": "credit_lookup"}
+{"id": "crd-05", "category": "clear-credit_lookup", "question": "幫我看看王志明有幾筆合約。", "expected": "credit_lookup"}
+{"id": "crd-06", "category": "clear-credit_lookup", "question": "客戶 C0012 還有幾期沒繳？", "expected": "credit_lookup"}
+{"id": "crd-07", "category": "clear-credit_lookup", "question": "查詢黃家豪的往來紀錄。", "expected": "credit_lookup"}
+{"id": "crd-08", "category": "clear-credit_lookup", "question": "C0007 的車貸還剩多少期？", "expected": "credit_lookup"}
+{"id": "crd-09", "category": "clear-credit_lookup", "question": "林志強的未償餘額是多少？", "expected": "credit_lookup"}
+{"id": "crd-10", "category": "clear-credit_lookup", "question": "這位客戶 C0020 之前有沒有遲繳過？", "expected": "credit_lookup"}
 {"id": "def-01", "category": "clear-default", "question": "你好，今天過得如何？", "expected": "default"}
 {"id": "def-02", "category": "clear-default", "question": "15 乘以 8 是多少？", "expected": "default"}
 {"id": "def-03", "category": "clear-default", "question": "講個笑話給我聽。", "expected": "default"}
@@ -28,13 +28,13 @@
 {"id": "def-08", "category": "clear-default", "question": "你最喜歡什麼顏色？", "expected": "default"}
 {"id": "def-09", "category": "clear-default", "question": "可以推薦一部好看的科幻電影嗎？", "expected": "default"}
 {"id": "def-10", "category": "clear-default", "question": "今天天氣如何？", "expected": "default"}
-{"id": "amb-01", "category": "ambiguous", "question": "跟我說說彼特這個人。", "expected": "rag", "note": "rag vs default: vague, but about the document's subject"}
-{"id": "amb-02", "category": "ambiguous", "question": "可以幫我存下彼特最喜歡的科目是數學、物理和文學嗎？", "expected": "actions", "note": "document content wrapped in an explicit save request"}
-{"id": "amb-03", "category": "ambiguous", "question": "從彼特的故事中我應該學到什麼？", "expected": "rag", "note": "rag vs default: reflective, but document-grounded"}
-{"id": "amb-04", "category": "ambiguous", "question": "提醒我一下彼特的父母是做什麼工作的。", "expected": "rag", "note": "'remind me' sounds like an action, but it's a factual document question"}
-{"id": "amb-05", "category": "ambiguous", "question": "寫一則短筆記，關於彼特一生最重視的事。", "expected": "actions", "note": "document content wrapped in an explicit 'write a note'"}
-{"id": "amb-06", "category": "ambiguous", "question": "我想記住彼特的晨間習慣，可以幫我記下來嗎？", "expected": "actions", "note": "document content plus explicit 'jot it down'"}
-{"id": "amb-07", "category": "ambiguous", "question": "記下我覺得這份文件很有啟發性。", "expected": "actions", "note": "actions vs default: personal opinion, but explicit 'note'"}
-{"id": "amb-08", "category": "ambiguous", "question": "這份文件裡有什麼值得記住的內容嗎？", "expected": "rag", "note": "rag vs actions: 'remembering' wording, but really a document-summary request"}
-{"id": "amb-09", "category": "ambiguous", "question": "可以幫我多了解一下這裡描述的這個人嗎？", "expected": "rag", "note": "rag vs default: vague, but references the document's subject"}
-{"id": "amb-10", "category": "ambiguous", "question": "存一個提醒，下次要問問彼特的職業生涯。", "expected": "actions", "note": "actions vs rag: the actionable part is the deferred save/reminder"}
+{"id": "amb-01", "category": "ambiguous", "question": "客戶逾期多久會被移送法務？", "expected": "rag", "note": "rag vs credit_lookup: about overdue accounts in general -- a policy question, no specific customer"}
+{"id": "amb-02", "category": "ambiguous", "question": "林志強逾期多久了？", "expected": "credit_lookup", "note": "rag vs credit_lookup: same topic as amb-01, but about one named customer"}
+{"id": "amb-03", "category": "ambiguous", "question": "王大明可以提前清償嗎？要付違約金嗎？", "expected": "rag", "note": "names a customer, but asks what the rule is -- answered by the policy, not his record"}
+{"id": "amb-04", "category": "ambiguous", "question": "提醒我一下陳美玲上次遲繳是哪一期。", "expected": "credit_lookup", "note": "'remind me' wording, but it's a lookup of one customer's payment record"}
+{"id": "amb-05", "category": "ambiguous", "question": "業務人員可以查看客戶的繳款明細嗎？", "expected": "rag", "note": "rag vs credit_lookup: about lookup permissions -- answered by the PII-handling policy"}
+{"id": "amb-06", "category": "ambiguous", "question": "跟我說說 C0005 這位客戶。", "expected": "credit_lookup", "note": "credit_lookup vs default: vague, but names a customer number"}
+{"id": "amb-07", "category": "ambiguous", "question": "什麼是附條件買賣？", "expected": "rag", "note": "rag vs default: general-sounding, but defined in 動產擔保交易法"}
+{"id": "amb-08", "category": "ambiguous", "question": "你可以幫我查客戶資料嗎？", "expected": "default", "note": "default vs credit_lookup: a capability question with no customer named"}
+{"id": "amb-09", "category": "ambiguous", "question": "王志明的合約狀況如何？", "expected": "credit_lookup", "note": "names a customer shared by two people -- still a lookup (the agent asks which one)"}
+{"id": "amb-10", "category": "ambiguous", "question": "逾期的客戶要怎麼通知？", "expected": "rag", "note": "rag vs credit_lookup: about overdue customers in general -- a policy question"}

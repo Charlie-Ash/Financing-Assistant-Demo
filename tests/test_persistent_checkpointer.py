@@ -14,9 +14,11 @@
 import tempfile
 from pathlib import Path
 
+import aiosqlite
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 
 from schemas.tool_call import ToolCall
+from orchestrator.orchestrator import build_checkpoint_serializer
 from orchestrator.pipeline.graph import build_graph
 
 from fake_dependencies import FakeOrchestratorLLM, FakeToolRouter
@@ -44,3 +46,31 @@ async def test_second_graph_instance_against_the_same_sqlite_file_resumes_histor
         assert len(llm_2.tool_decision_calls) == 1
         _, history, _ = llm_2.tool_decision_calls[0]
         assert [m.content for m in history] == ["first message", "canned reply about default-output"]
+
+
+# The orchestrator's checkpointer registers ToolCall (see
+# orchestrator.build_checkpoint_serializer). Passing an explicit allow-list
+# puts LangGraph's deserializer in strict mode -- only its built-in safe
+# types (messages etc.) plus the listed ones load, which is what a future
+# version will make the default -- so this proves a restarted orchestrator
+# still gets both its ToolCall and its chat history back.
+async def test_checkpointed_tool_call_resumes_under_strict_deserialization():
+
+    with tempfile.TemporaryDirectory() as tmp:
+        db_path = str(Path(tmp) / "checkpoints.db")
+        thread_config = {"configurable": {"thread_id": "strict-thread"}}
+        tool_call = ToolCall(tool="default", action="run", args={})
+
+        for message in ("first message", "second message"):
+            async with aiosqlite.connect(db_path) as conn:
+                checkpointer = AsyncSqliteSaver(conn, serde=build_checkpoint_serializer())
+                graph = build_graph(FakeOrchestratorLLM(next_tool_call=tool_call), await FakeToolRouter.create(), checkpointer=checkpointer)
+                await graph.ainvoke({"user_message": message}, config=thread_config)
+
+                state = await graph.aget_state(thread_config)
+                assert state.values["tool_call"] == tool_call
+
+        assert [m.content for m in state.values["messages"]] == [
+            "first message", "canned reply about default-output",
+            "second message", "canned reply about default-output",
+        ]

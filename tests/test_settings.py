@@ -2,12 +2,14 @@
 # i.e. at process startup -- naming the offending field, instead of letting
 # a malformed value surface later somewhere deep inside vLLM or uvicorn.
 # _env_file=None keeps a developer's local .env out of these tests.
+from pathlib import Path
+
 import pytest
 from pydantic import ValidationError
 
 from llm.settings import LLMServerSettings
 from orchestrator.config import OrchestratorSettings
-from tools.actionsTool.config import ActionsSettings
+from tools.creditLookupTool.config import CreditLookupSettings
 from tools.ragTool.config import RagSettings
 
 
@@ -22,12 +24,28 @@ def test_env_vars_are_read_and_coerced(monkeypatch):
     assert settings.llm_base_url == "http://gpu-box:8000/v1"
 
 
+def test_rag_data_dir_is_read_as_a_path(monkeypatch):
+
+    monkeypatch.setenv("RAG_DATA_DIR", "data/other_docs")
+
+    settings = RagSettings(_env_file=None)
+
+    assert settings.rag_data_dir == Path("data/other_docs")
+
+
+def test_only_the_regulation_agent_defaults_to_the_character_only_safety_net():
+
+    assert RagSettings(_env_file=None).llm_traditional_mode == "chars"
+    assert OrchestratorSettings(_env_file=None).llm_traditional_mode == "s2twp"
+    assert CreditLookupSettings(_env_file=None).llm_traditional_mode == "s2twp"
+
+
 def test_non_integer_port_fails_naming_the_field(monkeypatch):
 
-    monkeypatch.setenv("ACTIONS_A2A_PORT", "notaport")
+    monkeypatch.setenv("CREDIT_LOOKUP_A2A_PORT", "notaport")
 
-    with pytest.raises(ValidationError, match="actions_a2a_port"):
-        ActionsSettings(_env_file=None)
+    with pytest.raises(ValidationError, match="credit_lookup_a2a_port"):
+        CreditLookupSettings(_env_file=None)
 
 
 def test_out_of_range_gpu_fraction_fails_naming_the_field(monkeypatch):
@@ -50,6 +68,35 @@ def test_embed_device_only_accepts_cpu_or_cuda(monkeypatch):
 
     with pytest.raises(ValidationError, match="rag_embed_device"):
         RagSettings(_env_file=None)
+
+
+def test_gemini_provider_without_api_key_fails_naming_the_key(monkeypatch):
+
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    monkeypatch.delenv("LLM_API_KEY", raising=False)
+    monkeypatch.setenv("LLM_PROVIDER", "gemini")
+
+    with pytest.raises(ValidationError, match="GEMINI_API_KEY"):
+        OrchestratorSettings(_env_file=None)
+
+
+def test_unknown_provider_is_rejected(monkeypatch):
+
+    monkeypatch.setenv("LLM_PROVIDER", "openai")
+
+    with pytest.raises(ValidationError, match="llm_provider"):
+        RagSettings(_env_file=None)
+
+
+def test_gemini_api_key_env_var_is_read_and_kept_secret(monkeypatch):
+
+    monkeypatch.setenv("LLM_PROVIDER", "gemini")
+    monkeypatch.setenv("GEMINI_API_KEY", "AQ.secret-value")
+
+    settings = CreditLookupSettings(_env_file=None)
+
+    assert settings.llm_api_key.get_secret_value() == "AQ.secret-value"
+    assert "AQ.secret-value" not in repr(settings)
 
 
 def test_non_positive_timeout_is_rejected(monkeypatch):
