@@ -20,7 +20,10 @@ class OrchestratorLLM():
     # chat_llm is injectable (evals pass one with Traditional-Chinese
     # normalization off); by default it's built from orchestrator/config.py
     # and pointed at the shared LLM server (see src/llm/).
-    def __init__(self, tool_schema: dict, chat_llm: ChatLLM | None = None):
+    # assistant_profile (prompts.build_assistant_profile) tells the reply
+    # stage who it is and what this chat can do; empty for evals/tests that
+    # only exercise routing.
+    def __init__(self, tool_schema: dict, chat_llm: ChatLLM | None = None, assistant_profile: str = ""):
 
         if chat_llm is None:
             chat_llm = ChatLLM.from_settings(config.settings)
@@ -28,6 +31,7 @@ class OrchestratorLLM():
 
         self.llm = chat_llm
         self.tool_schema = tool_schema
+        self.assistant_profile = assistant_profile
 
         self.decision_sampling = SamplingConfig(
             temperature=0,  # temperture: randomness
@@ -82,7 +86,7 @@ class OrchestratorLLM():
         if tool_result["relay_verbatim"]:
             return tool_result["output"]
 
-        messages = build_response_prompt(user_message, history_messages, tool_call, tool_result)
+        messages = build_response_prompt(user_message, history_messages, tool_call, tool_result, self.assistant_profile)
 
         return self.llm.chat(messages, self.response_sampling).strip()
 
