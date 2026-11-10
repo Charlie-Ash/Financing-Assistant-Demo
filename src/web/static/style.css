@@ -37,7 +37,10 @@ button:disabled { opacity: 0.55; cursor: not-allowed; }
   border-radius: 16px; padding: 2.5rem 2rem; box-shadow: 0 8px 24px rgba(31, 41, 51, 0.06);
 }
 .welcome-title { font-size: 2.6rem; margin: 0 0 0.4rem; letter-spacing: 0.05em; }
-.welcome-subtitle { color: var(--muted); margin: 0 0 1.8rem; }
+.welcome-subtitle { color: var(--muted); margin: 0 0 1rem; }
+.welcome-features { list-style: none; padding: 0; margin: 0 0 1.8rem; color: var(--muted); font-size: 0.92rem; text-align: left; }
+.welcome-features li { padding: 0.15rem 0; }
+.welcome-features strong { color: var(--text); margin-right: 0.6rem; }
 .field-label { display: block; font-weight: 600; margin: 1rem 0 0.4rem; }
 #user-id { width: 100%; font: inherit; padding: 0.6rem 0.8rem; border: 1px solid var(--border); border-radius: 8px; }
 .role-cards { display: grid; grid-template-columns: 1fr 1fr; gap: 0.8rem; }

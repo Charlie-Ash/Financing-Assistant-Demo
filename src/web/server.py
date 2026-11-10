@@ -53,6 +53,16 @@ def create_app(manager: SessionManager | None = None, summary_dir: Path = SUMMAR
 
     app = FastAPI(title="Financing Assistant", lifespan=lifespan)
 
+    # The page and its JS/CSS must never be reused from the browser cache
+    # without asking: after a `git pull` an old app.js would show stale agent
+    # labels and help. "no-cache" still allows a cheap 304 when unchanged.
+    @app.middleware("http")
+    async def revalidate_page_files(request: Request, call_next):
+        response = await call_next(request)
+        if request.url.path == "/" or request.url.path.startswith("/static/"):
+            response.headers["Cache-Control"] = "no-cache"
+        return response
+
     @app.exception_handler(SessionError)
     async def session_error(request: Request, exc: SessionError):
         return JSONResponse(status_code=exc.status_code, content={"detail": str(exc)})

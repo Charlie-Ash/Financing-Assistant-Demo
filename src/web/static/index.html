@@ -12,7 +12,13 @@
   <section id="welcome-screen" class="screen" hidden>
     <div class="welcome-card">
       <h1 class="welcome-title">融資業務助理</h1>
-      <p class="welcome-subtitle">查詢法規與內部規範、客戶往來紀錄，協助業務與授信人員的日常工作。</p>
+      <p class="welcome-subtitle">查詢法規與內部規範、客戶往來紀錄，試算車貸月付與提前清償金額，協助業務與授信人員的日常工作。</p>
+      <ul class="welcome-features">
+        <li><strong>法規查詢</strong>法規與公司規範，附條號出處</li>
+        <li><strong>客戶查詢</strong>合約、繳款、逾期紀錄與提前清償試算</li>
+        <li><strong>貸款試算</strong>輸入車價、頭期款、期數，試算月付金、總利息與總費用年百分率</li>
+        <li><strong>一般對話</strong>其他問題</li>
+      </ul>
 
       <form id="start-form" autocomplete="off">
         <label class="field-label" for="user-id">使用者代號</label>
@@ -23,12 +29,12 @@
           <label class="role-card">
             <input type="radio" name="role" value="sales" checked>
             <span class="role-name">業務</span>
-            <span class="role-desc">可查看客戶基本資料、合約狀況，以及是否有逾期紀錄。</span>
+            <span class="role-desc">可查看客戶基本資料、合約狀況，以及是否有逾期紀錄；提前清償僅顯示違約金費率。</span>
           </label>
           <label class="role-card">
             <input type="radio" name="role" value="credit">
             <span class="role-name">授信</span>
-            <span class="role-desc">另可查看月付金額、未償餘額、逾期明細與內部註記。</span>
+            <span class="role-desc">另可查看月付金額、未償餘額、逾期明細與內部註記，以及提前清償應付金額。</span>
           </label>
         </div>
 
@@ -92,6 +98,8 @@
           <tr><td>月付金額、未償餘額</td><td>—</td><td>✓</td></tr>
           <tr><td>逾期紀錄</td><td>僅顯示「有／無」</td><td>次數、天數、各期明細</td></tr>
           <tr><td>內部註記</td><td>—</td><td>✓</td></tr>
+          <tr><td>提前清償試算</td><td>僅顯示違約金費率</td><td>未到期本金、逾期未繳、違約金與預估應付</td></tr>
+          <tr><td>貸款試算</td><td>✓</td><td>✓</td></tr>
         </tbody>
       </table>
       <p>身分在開始對話時選定，若要更換請結束目前的對話。每次客戶查詢都會記錄查詢者、身分與查詢對象。</p>
@@ -104,6 +112,7 @@
         <li>客戶資料皆為虛構的展示資料。</li>
         <li>法規回覆僅供參考，並附上條號出處，不構成法律意見。</li>
         <li>系統只提供資料摘要，不做授信核准或拒絕的判斷。</li>
+        <li>貸款試算的結果由程式計算，僅供參考；方案為示範用虛構資料，實際條件以核貸結果為準。</li>
         <li>問題內容會傳送至語言模型服務（Gemini API）處理，請勿輸入真實的個人資料。</li>
       </ul>
     </div>
