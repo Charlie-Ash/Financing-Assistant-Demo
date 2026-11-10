@@ -1,6 +1,6 @@
 # Quick live check of the Gemini backend: API key, model id, one Traditional
 # Chinese chat, and three real routing decisions (one per tool) through the
-# orchestrator's own prompt and schema. 4 small requests -- free-tier safe.
+# orchestrator's own prompt and schema. 5 small requests -- free-tier safe.
 #
 #   # from the repo root; GEMINI_API_KEY in src/orchestrator/.env:
 #   python evals/check_gemini.py
@@ -25,12 +25,14 @@ from orchestrator.config import OrchestratorSettings
 from orchestrator.pipeline.llm import OrchestratorLLM
 from schemas.tool_schema import build_tool_schema
 from tools.creditLookupTool.a2a.a2a_server import build_agent_card as build_credit_lookup_agent_card
+from tools.loanCalcTool.a2a.a2a_server import build_agent_card as build_loan_calc_agent_card
 from tools.ragTool.a2a.a2a_server import build_agent_card as build_rag_agent_card
 
 ROUTING_PROMPTS = [
     ("你好，今天可以幫我做什麼？", "default"),
     ("提前清償要付違約金嗎？", "rag"),
     ("王大明有沒有逾期紀錄？", "credit_lookup"),
+    ("車價120萬，頭期兩成，分60期，月付多少？", "loan_calc"),
 ]
 
 
@@ -65,6 +67,7 @@ def main():
         DEFAULT_TOOL_DESCRIPTION,
         describe_agent_card("rag", build_rag_agent_card("localhost", 0)),
         describe_agent_card("credit_lookup", build_credit_lookup_agent_card("localhost", 0)),
+        describe_agent_card("loan_calc", build_loan_calc_agent_card("localhost", 0)),
     ]
     llm = OrchestratorLLM(build_tool_schema([tool["name"] for tool in tool_descriptions]), chat_llm=chat_llm)
 

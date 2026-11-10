@@ -2,13 +2,15 @@
 // no build step or external libraries.
 "use strict";
 
-const AGENT_LABELS = { rag: "法規查詢", credit_lookup: "客戶查詢", default: "一般對話" };
+const AGENT_LABELS = { rag: "法規查詢", credit_lookup: "客戶查詢", loan_calc: "貸款試算", default: "一般對話" };
 const ROLE_LABELS = { sales: "業務", credit: "授信" };
 const AGENT_HELP = [
   { name: "rag", title: "法規查詢", text: "回答動產擔保交易法、消費者保護法、個人資料保護法、洗錢防制法與公司內部規範的問題，並附上條號出處。",
     examples: ["提前清償要付違約金嗎？", "個資法規定蒐集個人資料時要告知哪些事項？"] },
-  { name: "credit_lookup", title: "客戶查詢", text: "查詢客戶的合約、繳款與逾期紀錄，依你的身分顯示可看的資料。",
-    examples: ["王大明有沒有逾期紀錄？", "查一下 C0003 的合約", "他最近一年繳款正常嗎？"] },
+  { name: "credit_lookup", title: "客戶查詢", text: "查詢客戶的合約、繳款與逾期紀錄，以及現有合約的提前清償試算，依你的身分顯示可看的資料。",
+    examples: ["王大明有沒有逾期紀錄？", "查一下 C0003 的合約", "王大明現在提前清償要付多少？"] },
+  { name: "loan_calc", title: "貸款試算", text: "依車價、頭期款、期數與利率試算月付金、總利息與總費用年百分率；數字皆由程式計算，未提供的條件會列為試算假設。",
+    examples: ["車價 120 萬，頭期兩成，分 60 期，月付多少？", "RAV4 120萬，頭期兩成，殘值型48期，月付多少？"] },
   { name: "default", title: "一般對話", text: "一般問題與聊天。", examples: ["你好，你可以幫我做什麼？"] },
 ];
 

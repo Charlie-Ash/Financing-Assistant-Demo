@@ -42,6 +42,7 @@ from orchestrator.pipeline.llm import OrchestratorLLM
 from schemas.tool_call import ToolCall
 from schemas.tool_schema import build_tool_schema
 from tools.creditLookupTool.a2a.a2a_server import build_agent_card as build_credit_lookup_agent_card
+from tools.loanCalcTool.a2a.a2a_server import build_agent_card as build_loan_calc_agent_card
 from tools.ragTool.a2a.a2a_server import build_agent_card as build_rag_agent_card
 
 EVALS_DIR = Path(__file__).resolve().parent
@@ -70,6 +71,7 @@ def main():
         DEFAULT_TOOL_DESCRIPTION,
         describe_agent_card("rag", build_rag_agent_card("localhost", 0)),
         describe_agent_card("credit_lookup", build_credit_lookup_agent_card("localhost", 0)),
+        describe_agent_card("loan_calc", build_loan_calc_agent_card("localhost", 0)),
     ]
     tool_schema = build_tool_schema([tool["name"] for tool in tool_descriptions])
 

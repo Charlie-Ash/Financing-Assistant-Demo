@@ -19,7 +19,8 @@ class CreditLookupRequest(BaseModel):
     customer_id: str
 
     # Which aspect the question is about -- steers the summary, not the data shown.
-    focus: Literal["overview", "contracts", "payments"]
+    # "payoff" = 提前清償試算 (how much to repay the loan in full today).
+    focus: Literal["overview", "contracts", "payments", "payoff"]
 
 
 CREDIT_LOOKUP_REQUEST_SCHEMA = CreditLookupRequest.model_json_schema()

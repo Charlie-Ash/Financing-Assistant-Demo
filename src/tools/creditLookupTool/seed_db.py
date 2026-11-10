@@ -16,7 +16,15 @@ import string
 from datetime import date, timedelta
 from pathlib import Path
 
+from finance.loan_calc import remaining_balance, schedule
+from finance.plans import product_terms
 from tools.creditLookupTool.config import DB_PATH
+
+# Bump when the tables change: CreditLookupTool rebuilds an older database
+# automatically (it's synthetic, so nothing is lost; the audit log is a
+# separate file). v2 added each contract's rate, residual (balloon) and fees,
+# and computes payments/balances with finance/loan_calc.py.
+SCHEMA_VERSION = 2
 
 SEED = 20261021
 RANDOM_CUSTOMERS = 25
@@ -40,7 +48,8 @@ CREATE TABLE contracts (
     contract_id TEXT PRIMARY KEY, customer_id TEXT NOT NULL REFERENCES customers(customer_id),
     product TEXT NOT NULL, vehicle TEXT NOT NULL, principal INTEGER NOT NULL,
     monthly_payment INTEGER NOT NULL, term_months INTEGER NOT NULL, start_date TEXT NOT NULL,
-    status TEXT NOT NULL, outstanding_balance INTEGER NOT NULL
+    status TEXT NOT NULL, outstanding_balance INTEGER NOT NULL,
+    annual_rate REAL NOT NULL, residual_value INTEGER NOT NULL, fees INTEGER NOT NULL
 );
 CREATE TABLE payments (
     contract_id TEXT NOT NULL REFERENCES contracts(contract_id), period INTEGER NOT NULL,
@@ -89,34 +98,33 @@ def _fake_phone(rng: random.Random) -> str:
     return "09" + "".join(rng.choice(string.digits) for _ in range(8))
 
 
-def _monthly_payment(principal: int, term: int, product: str, annual_rate: float = 0.045) -> tuple[int, int]:
-
-    """(monthly payment, balloon). 殘值型 leaves 30% as a final balloon payment."""
-
-    balloon = round(principal * 0.3) if product == "殘值型車貸" else 0
-    rate = annual_rate / 12
-    financed = principal - balloon / (1 + rate) ** term
-    return round(financed * rate / (1 - (1 + rate) ** -term)), balloon
-
-
 def _contract_rows(contract_id, customer_id, product, vehicle, principal, term, start, as_of, late_days_by_period, unpaid_periods):
 
     """One contract plus its payment rows up to as_of. late_days_by_period /
-    unpaid_periods script the repayment behaviour (period -> days late)."""
+    unpaid_periods script the repayment behaviour (period -> days late).
+    Rate, method, residual and fees come from the product's demo plan, and
+    every amount from finance/loan_calc.py -- the same arithmetic the Loan
+    Calculator agent quotes with."""
 
-    monthly, balloon = _monthly_payment(principal, term, product)
+    terms = product_terms(product)
+    annual_rate = terms["annual_rate_percent"] / 100
+    balloon = round(principal * terms["residual_percent"] / 100)
+    rows = schedule(principal, annual_rate, term, terms["method"], balloon)
+    monthly = round(rows[0].payment)
     payments, paid_periods = [], 0
 
-    for period in range(1, term + 1):
+    for row in rows:
+        period = row.period
         due = add_months(start, period)
         if due > as_of:
             break
+        amount = round(row.payment)  # the last row of a balloon contract includes the balloon
         if period in unpaid_periods:
-            payments.append((contract_id, period, due.isoformat(), None, monthly, 0, (as_of - due).days))
+            payments.append((contract_id, period, due.isoformat(), None, amount, 0, (as_of - due).days))
             continue
         days_late = late_days_by_period.get(period, 0)
         paid = due + timedelta(days=days_late)
-        payments.append((contract_id, period, due.isoformat(), paid.isoformat(), monthly, monthly, days_late))
+        payments.append((contract_id, period, due.isoformat(), paid.isoformat(), amount, amount, days_late))
         paid_periods += 1
 
     finished = paid_periods == term
@@ -127,11 +135,29 @@ def _contract_rows(contract_id, customer_id, product, vehicle, principal, term, 
     else:
         status = "繳款中"
 
-    # Straight-line approximation of the remaining principal -- this is
-    # demo data, not an amortisation engine.
-    outstanding = 0 if finished else round((principal - balloon) * (1 - paid_periods / term)) + balloon
-    contract = (contract_id, customer_id, product, vehicle, principal, monthly, term, start.isoformat(), status, outstanding)
+    # Principal still owed: the amortised balance after the instalments
+    # actually paid (unpaid overdue instalments still count as owed).
+    outstanding = 0 if finished else round(remaining_balance(principal, annual_rate, term, paid_periods, terms["method"], balloon))
+    contract = (contract_id, customer_id, product, vehicle, principal, monthly, term, start.isoformat(), status, outstanding,
+                annual_rate, balloon, terms["fees"])
     return contract, payments
+
+
+def is_current(db_path: Path) -> bool:
+
+    """True if db_path exists and was built with this SCHEMA_VERSION."""
+
+    if not db_path.exists():
+        return False
+    try:
+        conn = sqlite3.connect(f"file:{db_path.as_posix()}?mode=ro", uri=True)
+        try:
+            row = conn.execute("SELECT value FROM meta WHERE key = 'schema_version'").fetchone()
+        finally:
+            conn.close()
+    except sqlite3.Error:
+        return False
+    return row is not None and row[0] == str(SCHEMA_VERSION)
 
 
 def _demo_customers(as_of: date):
@@ -208,8 +234,9 @@ def build_database(db_path: Path = DB_PATH, as_of: date | None = None) -> dict:
     with sqlite3.connect(db_path) as conn:
         conn.executescript(SCHEMA)
         conn.execute("INSERT INTO meta VALUES ('as_of_date', ?)", (as_of.isoformat(),))
+        conn.execute("INSERT INTO meta VALUES ('schema_version', ?)", (str(SCHEMA_VERSION),))
         conn.executemany("INSERT INTO customers VALUES (?, ?, ?, ?, ?, ?, ?, ?)", customers)
-        conn.executemany("INSERT INTO contracts VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", contracts)
+        conn.executemany("INSERT INTO contracts VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", contracts)
         conn.executemany("INSERT INTO payments VALUES (?, ?, ?, ?, ?, ?, ?)", payments)
     conn.close()
 
