@@ -13,7 +13,7 @@ from orchestrator.agents.remote_agent import RemoteAgent, discover_remote_agent
 # hand-written here.
 DEFAULT_TOOL_DESCRIPTION = {
     "name": "default",
-    "description": "用於一般對話、閒聊、常識問題，或意圖不明確、不需要查詢文件也不需要記錄筆記的訊息。",
+    "description": "用於一般對話、問候、詢問本系統能做什麼或如何使用，以及其他不需要查詢法規或客戶資料的訊息。",
     "example_user_message": "你好",
 }
 

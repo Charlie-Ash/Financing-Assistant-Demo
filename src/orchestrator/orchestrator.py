@@ -13,6 +13,7 @@ from orchestrator import config, memory_manager
 from orchestrator.agents.tool_router import ToolRouter
 from orchestrator.pipeline.llm import OrchestratorLLM
 from orchestrator.pipeline.graph import build_graph
+from orchestrator.pipeline.prompts import build_assistant_profile
 from schemas.tool_schema import build_tool_schema
 
 # Project types stored in checkpointed graph state (OrchestratorState.tool_call).
@@ -70,7 +71,11 @@ class Orchestrator():
         # schema handed to OrchestratorLLM) isn't known until discovery above
         # has run -- see schemas/tool_schema.build_tool_schema.
         tool_schema = build_tool_schema(tool_router.all_tool_names())
-        llm = OrchestratorLLM(tool_schema)
+        # Who the assistant is and what it can do in this chat: the agents
+        # that were actually reachable plus this caller's role (see
+        # prompts.build_assistant_profile).
+        assistant_profile = build_assistant_profile(tool_router.describe_tools_for_prompt(), caller)
+        llm = OrchestratorLLM(tool_schema, assistant_profile=assistant_profile)
 
         # Fresh per-session chat log, reset on every boot (see memory_manager).
         memory_manager.init_chat_log()
@@ -107,12 +112,26 @@ class Orchestrator():
     # invoke() (see graph.py's run_remote_tool).
     async def run_orchestrator(self, user_message):
 
+        return (await self.run_turn(user_message))["reply"]
+
+    # Same turn as run_orchestrator(), also reporting which tool/agent
+    # answered ("default", "rag", "credit_lookup", ...) -- the web interface
+    # tags each reply with it (see src/web/).
+    async def run_turn(self, user_message) -> dict:
+
         # Named invoke_config (not config) so it doesn't shadow the
         # module-level `orchestrator.config` import above within this
         # function's scope.
         invoke_config = {"configurable": {"thread_id": self.thread_id}}
         result = await self.graph.ainvoke({"user_message": user_message, "caller": self.caller}, config=invoke_config)
-        return result["final_response"]
+        return {"reply": result["final_response"], "tool": result["tool_call"].tool}
+
+    # Names of the remote agents that were reachable when this session
+    # started (an agent that's down is skipped at discovery, see
+    # tool_router.ToolRouter.discover).
+    def connected_agents(self) -> list[str]:
+
+        return list(self.tool_router.remote_agents)
 
     # Called from main.py's "bye" flow once the user has answered the save prompt.
     def end_session(self, save: bool) -> Optional[Path]:

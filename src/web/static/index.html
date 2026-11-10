@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="zh-Hant-TW">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>融資業務助理</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+
+  <!-- Welcome screen: shown when no chat is active -->
+  <section id="welcome-screen" class="screen" hidden>
+    <div class="welcome-card">
+      <h1 class="welcome-title">融資業務助理</h1>
+      <p class="welcome-subtitle">查詢法規與內部規範、客戶往來紀錄，協助業務與授信人員的日常工作。</p>
+
+      <form id="start-form" autocomplete="off">
+        <label class="field-label" for="user-id">使用者代號</label>
+        <input id="user-id" name="user_id" type="text" maxlength="32" placeholder="例如 wang01" required>
+
+        <span class="field-label">身分</span>
+        <div class="role-cards">
+          <label class="role-card">
+            <input type="radio" name="role" value="sales" checked>
+            <span class="role-name">業務</span>
+            <span class="role-desc">可查看客戶基本資料、合約狀況，以及是否有逾期紀錄。</span>
+          </label>
+          <label class="role-card">
+            <input type="radio" name="role" value="credit">
+            <span class="role-name">授信</span>
+            <span class="role-desc">另可查看月付金額、未償餘額、逾期明細與內部註記。</span>
+          </label>
+        </div>
+
+        <p id="start-error" class="form-error" hidden></p>
+        <button id="start-button" class="primary" type="submit">開始對話</button>
+      </form>
+
+      <p class="welcome-note">本系統為展示用途：客戶資料皆為虛構，身分證字號與電話均已遮罩。
+        <button type="button" class="link-button" data-open-help>查看說明</button></p>
+    </div>
+  </section>
+
+  <!-- Chat screen: one active conversation -->
+  <section id="chat-screen" class="screen" hidden>
+    <header class="chat-header">
+      <div class="header-title">融資業務助理</div>
+      <span id="role-badge" class="role-badge"></span>
+      <div class="header-actions">
+        <button type="button" class="secondary" data-open-help>說明</button>
+        <button type="button" id="end-button" class="secondary">結束對話</button>
+      </div>
+    </header>
+
+    <main id="messages" class="messages" aria-live="polite">
+      <div id="intro" class="intro">
+        <h2 class="intro-title">歡迎</h2>
+        <p class="intro-text">可以詢問法規與公司規範、查詢客戶的往來紀錄，或直接聊天。試試看：</p>
+        <div class="example-chips">
+          <button type="button" class="chip" data-example>提前清償要付違約金嗎？</button>
+          <button type="button" class="chip" data-example>王大明有沒有逾期紀錄？</button>
+          <button type="button" class="chip" data-example>動產擔保交易法對附條件買賣有什麼規定？</button>
+          <button type="button" class="chip" data-example>你好，你可以幫我做什麼？</button>
+        </div>
+      </div>
+    </main>
+
+    <form id="chat-form" class="composer" autocomplete="off">
+      <textarea id="chat-input" rows="1" maxlength="2000" placeholder="輸入問題，Enter 送出，Shift+Enter 換行"></textarea>
+      <button id="send-button" class="primary" type="submit">送出</button>
+    </form>
+  </section>
+
+  <!-- Help -->
+  <dialog id="help-dialog" class="dialog">
+    <div class="dialog-head">
+      <h2>使用說明</h2>
+      <button type="button" class="icon-button" data-close aria-label="關閉">✕</button>
+    </div>
+    <div class="dialog-body">
+      <h3>可以做什麼</h3>
+      <p>每則訊息會自動交給最適合的助理處理，回覆上方會標示由哪一位回答。</p>
+      <ul class="agent-list" id="agent-list"></ul>
+
+      <h3>兩種身分的差別</h3>
+      <table class="role-table">
+        <thead><tr><th></th><th>業務</th><th>授信</th></tr></thead>
+        <tbody>
+          <tr><td>姓名、所屬據點、合約與狀態</td><td>✓</td><td>✓</td></tr>
+          <tr><td>身分證字號、電話</td><td>遮罩</td><td>遮罩</td></tr>
+          <tr><td>月付金額、未償餘額</td><td>—</td><td>✓</td></tr>
+          <tr><td>逾期紀錄</td><td>僅顯示「有／無」</td><td>次數、天數、各期明細</td></tr>
+          <tr><td>內部註記</td><td>—</td><td>✓</td></tr>
+        </tbody>
+      </table>
+      <p>身分在開始對話時選定，若要更換請結束目前的對話。每次客戶查詢都會記錄查詢者、身分與查詢對象。</p>
+
+      <h3>對話摘要</h3>
+      <p>系統會在每一輪對話後整理重點。按下「結束對話」時可以選擇是否儲存摘要；選擇儲存後，會出現「下載摘要」按鈕，可下載 Markdown 檔案。</p>
+
+      <h3>注意事項</h3>
+      <ul>
+        <li>客戶資料皆為虛構的展示資料。</li>
+        <li>法規回覆僅供參考，並附上條號出處，不構成法律意見。</li>
+        <li>系統只提供資料摘要，不做授信核准或拒絕的判斷。</li>
+        <li>問題內容會傳送至語言模型服務（Gemini API）處理，請勿輸入真實的個人資料。</li>
+      </ul>
+    </div>
+  </dialog>
+
+  <!-- End chat -->
+  <dialog id="end-dialog" class="dialog dialog-small">
+    <div class="dialog-body" data-step="confirm">
+      <h2>結束對話</h2>
+      <p>要儲存這次對話的摘要嗎？</p>
+      <div class="dialog-actions">
+        <button type="button" class="secondary" data-close>取消</button>
+        <button type="button" class="secondary" id="end-discard">不儲存</button>
+        <button type="button" class="primary" id="end-save">儲存</button>
+      </div>
+    </div>
+    <div class="dialog-body" data-step="working" hidden>
+      <p class="working"><span class="spinner"></span>正在整理對話摘要…</p>
+    </div>
+    <div class="dialog-body" data-step="done" hidden>
+      <h2>摘要已儲存</h2>
+      <p id="saved-name" class="saved-name"></p>
+      <div class="dialog-actions">
+        <a id="download-link" class="button secondary" href="#" download>下載摘要</a>
+        <button type="button" class="primary" id="new-chat">開始新對話</button>
+      </div>
+    </div>
+    <div class="dialog-body" data-step="error" hidden>
+      <h2>無法結束對話</h2>
+      <p id="end-error" class="form-error"></p>
+      <div class="dialog-actions">
+        <button type="button" class="primary" data-close>關閉</button>
+      </div>
+    </div>
+  </dialog>
+
+  <template id="message-template">
+    <article class="message">
+      <div class="message-meta"></div>
+      <div class="message-body"></div>
+      <div class="message-actions"></div>
+    </article>
+  </template>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>
