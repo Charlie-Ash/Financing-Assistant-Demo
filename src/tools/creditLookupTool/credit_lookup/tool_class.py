@@ -8,7 +8,7 @@ from tools.creditLookupTool import config
 from tools.creditLookupTool.credit_lookup.audit import append_audit
 from tools.creditLookupTool.credit_lookup.datasource import SqliteCreditDataSource
 from tools.creditLookupTool.credit_lookup.graph import build_credit_lookup_subgraph
-from tools.creditLookupTool.seed_db import build_database
+from tools.creditLookupTool.seed_db import SCHEMA_VERSION, build_database, is_current
 
 
 class CreditLookupTool():
@@ -17,9 +17,12 @@ class CreditLookupTool():
 
         print("Credit Lookup tool initialized.")
 
-        if not config.DB_PATH.exists():
+        # Synthetic data, so an outdated or missing database is simply rebuilt
+        # (the audit log is a separate file and is kept).
+        if not is_current(config.DB_PATH):
             counts = build_database(config.DB_PATH)
-            print(f"Built synthetic customer database at {config.DB_PATH}: {counts['customers']} customers, {counts['contracts']} contracts.")
+            print(f"Built synthetic customer database (schema v{SCHEMA_VERSION}) at {config.DB_PATH}: "
+                  f"{counts['customers']} customers, {counts['contracts']} contracts.")
 
         self.datasource = SqliteCreditDataSource(config.DB_PATH)
 

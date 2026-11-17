@@ -66,7 +66,12 @@ def test_page_is_served(harness):
 
     assert response.status_code == 200
     assert "融資業務助理" in response.text
-    assert client.get("/static/app.js").status_code == 200
+    assert "貸款試算" in response.text
+    assert response.headers["cache-control"] == "no-cache"
+    script = client.get("/static/app.js")
+    assert script.status_code == 200
+    assert script.headers["cache-control"] == "no-cache"  # never a stale app.js after a pull
+    assert 'loan_calc: "貸款試算"' in script.text
 
 
 def test_no_session_until_started(harness):

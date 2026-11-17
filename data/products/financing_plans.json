@@ -1,0 +1,28 @@
+{
+  "_note": "【示範用虛構方案】系統展示用的融資方案，非任何公司的實際利率或條件。Loan Calculator agent 以此補足使用者未指定的條件，Credit Lookup 的示範資料也依此設定利率。",
+  "plans": {
+    "一般車貸": {
+      "method": "equal_installment",
+      "annual_rate_percent": 3.88,
+      "term_min": 12,
+      "term_max": 84,
+      "fees": 5000,
+      "residual_percent": 0
+    },
+    "殘值型車貸": {
+      "method": "balloon",
+      "annual_rate_percent": 3.5,
+      "terms": [36, 48, 60],
+      "fees": 5000,
+      "residual_percent": 30
+    },
+    "0利率專案": {
+      "method": "equal_installment",
+      "annual_rate_percent": 0,
+      "term_min": 6,
+      "term_max": 24,
+      "fees": 8000,
+      "residual_percent": 0
+    }
+  }
+}

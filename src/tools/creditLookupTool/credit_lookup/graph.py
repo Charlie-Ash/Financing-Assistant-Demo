@@ -38,7 +38,7 @@ EXTRACT_PROMPT = (
     "你是客戶資料查詢系統的解析器。請從使用者的問題中找出要查詢的客戶：\n"
     "- customer_name：客戶姓名，照使用者的寫法填入，沒有則填空字串。\n"
     "- customer_id：客戶編號（C 加四位數字，例如 C0003），沒有則填空字串。\n"
-    "- focus：問題重點，contracts（合約）、payments（繳款、逾期）或 overview（整體往來）。\n"
+    "- focus：問題重點，contracts（合約）、payments（繳款、逾期）、payoff（提前清償要付多少）或 overview（整體往來）。\n"
     "若問題用「他」、「她」、「這位客戶」等指稱，請從先前的對話中找出所指的客戶。"
 )
 
@@ -51,7 +51,7 @@ SUMMARY_PROMPT = (
     + ZH_TW_REPLY_INSTRUCTION
 )
 
-FOCUS_LABELS = {"overview": "整體往來", "contracts": "合約", "payments": "繳款與逾期"}
+FOCUS_LABELS = {"overview": "整體往來", "contracts": "合約", "payments": "繳款與逾期", "payoff": "提前清償試算"}
 
 EXTRACT_SAMPLING = SamplingConfig(temperature=0.0, top_p=1.0, max_tokens=200)
 SUMMARY_SAMPLING = SamplingConfig(temperature=0.2, top_p=0.9, max_tokens=300)
@@ -143,7 +143,10 @@ def build_credit_lookup_subgraph(
         except Exception as e:
             return finish(state, "error", f"Credit lookup error: database unavailable ({e})", verbatim=False)
 
-        return {"view": build_view(customer, contracts, payments, as_of, state["caller"]["role"], payment_months)}
+        return {"view": build_view(
+            customer, contracts, payments, as_of, state["caller"]["role"], payment_months,
+            include_payoff=state.get("focus") == "payoff",
+        )}
 
     # Node: the LLM summarises the masked facts; the reply itself is built by
     # code around that summary, so the facts are always exact.

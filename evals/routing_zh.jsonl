@@ -38,3 +38,17 @@
 {"id": "amb-08", "category": "ambiguous", "question": "你可以幫我查客戶資料嗎？", "expected": "default", "note": "default vs credit_lookup: a capability question with no customer named"}
 {"id": "amb-09", "category": "ambiguous", "question": "王志明的合約狀況如何？", "expected": "credit_lookup", "note": "names a customer shared by two people -- still a lookup (the agent asks which one)"}
 {"id": "amb-10", "category": "ambiguous", "question": "逾期的客戶要怎麼通知？", "expected": "rag", "note": "rag vs credit_lookup: about overdue customers in general -- a policy question"}
+{"id": "loan-01", "category": "clear-loan_calc", "question": "車價120萬，頭期兩成，分60期，月付多少？", "expected": "loan_calc"}
+{"id": "loan-02", "category": "clear-loan_calc", "question": "借60萬分36期，每個月要繳多少？", "expected": "loan_calc"}
+{"id": "loan-03", "category": "clear-loan_calc", "question": "RAV4 殘值型48期，車價130萬，頭期三成，月付多少？", "expected": "loan_calc"}
+{"id": "loan-04", "category": "clear-loan_calc", "question": "0利率24期，借50萬，每月繳多少？", "expected": "loan_calc"}
+{"id": "loan-05", "category": "clear-loan_calc", "question": "貸款80萬，利率3%，5年，總利息多少？", "expected": "loan_calc"}
+{"id": "loan-06", "category": "clear-loan_calc", "question": "車價100萬全額貸款分84期月付多少？", "expected": "loan_calc"}
+{"id": "loan-07", "category": "clear-loan_calc", "question": "借70萬分48期，用本金平均攤還第一期要繳多少？", "expected": "loan_calc"}
+{"id": "loan-08", "category": "clear-loan_calc", "question": "頭期30萬，車價110萬，分60期的話月付是多少？", "expected": "loan_calc"}
+{"id": "loan-09", "category": "clear-loan_calc", "question": "如果貸款90萬、年利率4%、分36期，總費用年百分率是多少？", "expected": "loan_calc"}
+{"id": "loan-10", "category": "clear-loan_calc", "question": "殘值型車貸60期，車價150萬，月付大概多少？", "expected": "loan_calc"}
+{"id": "amb-11", "category": "ambiguous", "question": "提前清償違約金怎麼算？", "expected": "rag", "note": "rag vs loan_calc vs credit_lookup: asks for the rule itself"}
+{"id": "amb-12", "category": "ambiguous", "question": "王大明現在提前清償要付多少？", "expected": "credit_lookup", "note": "names a customer -- his own contract's payoff, not a new quote"}
+{"id": "amb-13", "category": "ambiguous", "question": "車貸利率一般是多少？", "expected": "default", "note": "default vs loan_calc: general question, no numbers to calculate"}
+{"id": "amb-14", "category": "ambiguous", "question": "王大明想買一台120萬的車，分60期月付多少？", "expected": "loan_calc", "note": "names a customer, but the question is a new quote with given numbers"}

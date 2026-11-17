@@ -57,9 +57,16 @@ class SqliteCreditDataSource:
 
     def get_contracts(self, customer_id: str) -> list[dict]:
 
+        # due_periods / overdue_amount: instalments that have fallen due so
+        # far, and the total of those still unpaid -- what a payoff quote
+        # needs on top of the scheduled balance.
         return self._query(
-            """SELECT c.*, (SELECT COUNT(*) FROM payments p
-                            WHERE p.contract_id = c.contract_id AND p.paid_date IS NOT NULL) AS paid_periods
+            """SELECT c.*,
+                      (SELECT COUNT(*) FROM payments p
+                       WHERE p.contract_id = c.contract_id AND p.paid_date IS NOT NULL) AS paid_periods,
+                      (SELECT COUNT(*) FROM payments p WHERE p.contract_id = c.contract_id) AS due_periods,
+                      (SELECT COALESCE(SUM(p.amount_due), 0) FROM payments p
+                       WHERE p.contract_id = c.contract_id AND p.paid_date IS NULL) AS overdue_amount
                FROM contracts c WHERE c.customer_id = ? ORDER BY c.start_date""",
             (customer_id,),
         )

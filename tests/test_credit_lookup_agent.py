@@ -163,3 +163,50 @@ def test_summary_failure_still_returns_the_exact_facts(db_path):
 
     assert result["output"].startswith("【客戶資料】王大明（C0001）")
     assert audit[0]["outcome"] == "ok"
+
+
+# --- 提前清償試算 (payoff) and the v2 database ---
+
+from tools.creditLookupTool.seed_db import SCHEMA_VERSION, is_current
+
+
+def test_database_is_current_and_an_old_one_is_detected(db_path, tmp_path):
+
+    assert is_current(db_path)
+    assert not is_current(tmp_path / "missing.db")
+
+    old = tmp_path / "v1.db"
+    with sqlite3.connect(old) as conn:
+        conn.execute("CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)")
+        conn.execute("INSERT INTO meta VALUES ('as_of_date', '2026-10-21')")
+    conn.close()
+    assert not is_current(old)
+    assert SCHEMA_VERSION == 2
+
+
+def test_credit_payoff_quote_shows_the_amounts(db_path):
+
+    llm = FakeChatLLM([_extraction("王大明", focus="payoff"), "摘要"])
+    output = _run(db_path, "王大明現在提前清償要付多少？", CREDIT, llm)[0]["output"]
+
+    assert "【提前清償試算】" in output and "提前清償作業規範》第2條" in output
+    assert "合約已滿 20 個月，提前清償違約金費率 1%" in output
+    assert "未到期本金 NT$" in output and "預估應付 NT$" in output
+
+
+def test_overdue_instalments_are_added_to_the_payoff(db_path):
+
+    llm = FakeChatLLM([_extraction("林志強", focus="payoff"), "摘要"])
+    output = _run(db_path, "林志強提前清償要付多少？", CREDIT, llm)[0]["output"]
+
+    assert "違約金費率 0%" in output  # just over 24 months
+    assert "逾期未繳 NT$0" not in output
+
+
+def test_sales_payoff_shows_only_the_fee_tier(db_path):
+
+    llm = FakeChatLLM([_extraction("王大明", focus="payoff"), "摘要"])
+    output = _run(db_path, "王大明現在提前清償要付多少？", SALES, llm)[0]["output"]
+
+    assert "違約金費率 1%；實際應付金額請洽授信人員" in output
+    assert "預估應付" not in output and "未到期本金" not in output

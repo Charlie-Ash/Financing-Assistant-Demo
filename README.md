@@ -7,7 +7,8 @@ A locally-hosted, multi-agent knowledge assistant built on **Google's Agent-to-A
 A2ASystem is an orchestrator ("Secretary") that routes each user message to the right specialist agent using vLLM guided/structured decoding, rather than a hand-parsed prompt:
 
 - **Regulation & Policy Agent** (`rag`) — answers questions about Taiwanese financing law (動產擔保交易法, 消費者保護法, 個人資料保護法, 洗錢防制法) and internal policies, citing the exact article (《法規名》第X條) for every claim.
-- **Credit Lookup Agent** (`credit_lookup`) — looks up a customer's contracts, payments and late payments in a synthetic SQLite database and summarises them, showing only what the caller's role (`sales` or `credit`) may see, with ID numbers and phones masked. It never approves or rejects credit.
+- **Credit Lookup Agent** (`credit_lookup`) — looks up a customer's contracts, payments and late payments in a synthetic SQLite database and summarises them, showing only what the caller's role (`sales` or `credit`) may see, with ID numbers and phones masked. It can also quote what a customer would pay to repay a contract early. It never approves or rejects credit.
+- **Loan Calculator Agent** (`loan_calc`) — quotes monthly payments, total interest and 總費用年百分率 for car loans (equal instalments, equal principal, balloon/殘值型, 0% promotions). The LLM only reads the numbers out of the question; every figure is computed by Python, and anything the user didn't state is asked for or listed as an assumption.
 
 Each agent is its own long-running process, and the orchestrator talks to them over the network using the A2A protocol rather than calling them as local functions. All of them generate text through **one shared vLLM server** (see [Architecture](#architecture)).
 
@@ -25,12 +26,14 @@ One vLLM server process holds the GPU's LLM, and three independent agent process
 | **Orchestrator** | User-facing REPL; A2A **client**; decides which agent to call and composes the final reply | `src/main.py` | (local, stdin/stdout) |
 | **Regulation & Policy Agent** | A2A **server**; answers regulation/policy questions with article citations | `src/tools/ragTool/a2a/a2a_server.py` | `http://0.0.0.0:8001` |
 | **Credit Lookup Agent** | A2A **server**; role-filtered customer history lookups | `src/tools/creditLookupTool/a2a/a2a_server.py` | `http://0.0.0.0:8002` |
+| **Loan Calculator Agent** | A2A **server**; car-loan payment quotes | `src/tools/loanCalcTool/a2a/a2a_server.py` | `http://0.0.0.0:8003` |
 
 Internally, every agent is its own compiled **LangGraph** graph:
 
 - **Orchestrator** — `decide_tool` (guided-decoding tool routing) → route to the local `default` tool or a discovered remote agent → `generate_response` → `update_memory`.
 - **Regulation & Policy Agent** — `extract_query` → `retrieve` (Qdrant vector search for 20 candidates, then `bge-reranker-v2-m3` keeps the best 4) → `generate_answer` (labelled sources in the prompt; a code-built 參考來源 list and disclaimer appended to the answer).
 - **Credit Lookup Agent** — `check_caller` → `extract_request` (guided decoding: which customer, which aspect) → `resolve_customer` (fixed SQL; not found / several matches end here) → `lookup` (role filter + masking in code) → `summarise` (LLM summary over the masked facts, code-rendered facts block appended).
+- **Loan Calculator Agent** — `extract` (guided decoding: only the numbers the user stated) → `resolve` (code: ground every number in the user's own words, pick the plan, ask for anything missing, check ranges) → `calculate` (code: `finance/loan_calc.py`, then render the quote).
 
 At startup, the orchestrator discovers each configured remote agent's `AgentCard` over HTTP; an agent that's unreachable is simply excluded from routing for that session rather than causing a crash. Since the Credit Lookup agent needs conversation context (e.g. 「他最近有逾期嗎？」 after a question about 王大明) and the caller's identity but lives in a different process, the orchestrator attaches a slice of recent chat history and the caller (`{user_id, role}`, from `main.py --user/--role`) to the outgoing A2A message's metadata, and the remote agent reconstructs both on its side.
 
@@ -88,6 +91,7 @@ A2ASystem/
 ├── src/
 │   ├── main.py                   # CLI entry point (Orchestrator REPL)
 │   ├── web/                      # browser interface: server.py (FastAPI), session.py, static/ (page)
+│   ├── finance/                  # loan_calc.py (all loan arithmetic), plans.py (demo plans), numbers.py (reads 120萬/兩成/四十八期)
 │   ├── chat_history.py           # shared LangChain-messages <-> wire-format helpers
 │   ├── llm/                      # the shared LLM layer
 │   │   ├── serve.py              # starts the one vLLM server (python -m llm.serve)
@@ -123,11 +127,16 @@ A2ASystem/
 │       │   ├── fetch_laws.py     # refreshes data/regulations/laws/ from law.moj.gov.tw
 │       │   ├── rag/              # dataIngestion, userQuery, models (embedding + reranker), graph, state, tool_class
 │       │   └── a2a/              # a2a_server.py, agent_executor.py
-│       └── creditLookupTool/     # standalone Credit Lookup A2A agent (own process)
+│       ├── creditLookupTool/     # standalone Credit Lookup A2A agent (own process)
+│       │   ├── config.py
+│       │   ├── .env.example      # copy to .env in this folder to override defaults (see Configuration)
+│       │   ├── seed_db.py        # builds the synthetic SQLite customer database (fixed seed)
+│       │   ├── credit_lookup/    # datasource (fixed queries), policy (roles + masking + payoff), audit, graph, state, tool_class
+│       │   └── a2a/              # a2a_server.py, agent_executor.py
+│       └── loanCalcTool/         # standalone Loan Calculator A2A agent (own process)
 │           ├── config.py
-│           ├── .env.example      # copy to .env in this folder to override defaults (see Configuration)
-│           ├── seed_db.py        # builds the synthetic SQLite customer database (fixed seed)
-│           ├── credit_lookup/    # datasource (fixed queries), policy (roles + masking), audit, graph, state, tool_class
+│           ├── .env.example
+│           ├── calculator/       # request_schema, resolve (grounding + checks), render, graph, state, tool_class
 │           └── a2a/              # a2a_server.py, agent_executor.py
 └── tests/
     ├── fake_dependencies.py      # GPU-free, network-free fakes for testing
@@ -210,6 +219,16 @@ Answers questions about one customer's history with the company — 「王大明
 - **Same name, several customers:** returns a masked candidate list and asks for the customer number; no record data.
 - The role is self-declared on the command line for the demo; real authentication is Phase 5. Enforcement already lives in the agent, so a real login only changes where the role comes from.
 
+## Loan Calculator agent
+
+Quotes car-loan payments: 「車價 120 萬，頭期兩成，分 60 期，月付多少？」, 「RAV4 120萬，頭期兩成，殘值型48期」, 「0利率24期，借60萬」, follow-ups like 「那改成 48 期呢？」.
+
+- **All arithmetic is Python** (`src/finance/loan_calc.py`): 本息平均攤還 `M = P·r / (1 − (1+r)^−n)`, 本金平均攤還, 殘值型 `M = (P − B/(1+r)^n)·r / (1 − (1+r)^−n)` with the balloon paid with the last instalment, 0% plans, the repayment schedule, and 總費用年百分率 (the monthly rate at which the payments' present value equals the loan minus upfront fees, × 12 — a simplified estimate). The LLM makes exactly one call per question, to read the numbers; no LLM writes or rewrites any figure.
+- **No invented inputs.** Every number the LLM extracts must match something the user actually wrote (`finance/numbers.py` reads 1,200,000 / 120萬 / 一百二十萬 / 兩成 / 3.5% / 四十八期 / 5年); anything else is treated as not given. A loan amount (or car price) and a term are **required** — if either is missing the agent asks, echoing what it already understood. Rate, residual, fees and plan fall back to the plan's defaults and are always listed under 試算假設. Impossible or conflicting inputs (down payment above the price, a term the plan doesn't offer, a rate above 20%) are explained instead of calculated.
+- **Demo plans** (`data/products/financing_plans.json`, fictional): 一般車貸 3.88%, 12–84 months; 殘值型車貸 3.5%, 36/48/60 months, residual 30% of the car price; 0利率專案 0%, up to 24 months, with an 開辦費 that makes its APR above 0.
+- **Existing customers' payoff** is a Credit Lookup question (「王大明現在提前清償要付多少？」): it uses the same library on the customer's own contract — remaining principal + unpaid instalments + the early-repayment fee from 《提前清償作業規範》第2條 (2% within 12 months, 1% within 24, then none). `credit` sees the amounts; `sales` sees only which fee tier applies.
+- The customer database is now **version 2**: each contract stores its rate, residual and fees, and its payments and balance come from the same library. The Credit Lookup agent rebuilds an older database automatically on start (the audit log is kept).
+
 ## Configuration
 
 The LLM server and each of the three agents (Orchestrator, RAG, Credit Lookup) read their own settings independently, in this order of priority: **a real OS environment variable** you've exported, then **that agent's own `.env` file**, then **the built-in default** baked into its `config.py`. You never have to set anything for the project to run — the built-in defaults are what's been used throughout development — but if you want to change a model, a port, or a GPU memory budget, a `.env` file is the easiest way.
@@ -234,8 +253,8 @@ A few things worth knowing:
 
 | Agent | Variable | Default | Purpose |
 |---|---|---|---|
-| Orchestrator | `REMOTE_AGENTS` | `rag@http://localhost:8001,credit_lookup@http://localhost:8002` | Which A2A agents the orchestrator discovers, as `name@url` pairs |
-| Orchestrator | `REMOTE_AGENTS_VERBATIM` | `rag,credit_lookup` | Which agents' successful results are relayed to the user as-is instead of composed into a reply |
+| Orchestrator | `REMOTE_AGENTS` | `rag@http://localhost:8001,credit_lookup@http://localhost:8002,loan_calc@http://localhost:8003` | Which A2A agents the orchestrator discovers, as `name@url` pairs |
+| Orchestrator | `REMOTE_AGENTS_VERBATIM` | `rag,credit_lookup,loan_calc` | Which agents' successful results are relayed to the user as-is instead of composed into a reply |
 | Orchestrator | `CHECKPOINT_DB_PATH` | `data/checkpoints/checkpoints.db` | Where the persistent LangGraph checkpointer writes conversation state |
 | Orchestrator | `REMOTE_AGENT_TIMEOUT_SECONDS` | `180` | How long the orchestrator waits for a remote agent's A2A response before giving up |
 | LLM server | `LLM_PROFILE` | `qwen3-14b-fp8` | Which model to serve (a key in `src/llm/profiles.py`) |
@@ -262,6 +281,7 @@ A few things worth knowing:
 | Credit Lookup | `CREDIT_LOOKUP_AUDIT_LOG_PATH` | `data/credit/audit_log.jsonl` | Append-only log of every lookup: who, role, question, outcome, customer ids |
 | Credit Lookup | `CREDIT_LOOKUP_PAYMENT_MONTHS` | `12` | How many months of payment history a lookup summarises |
 | Credit Lookup | `CREDIT_LOOKUP_A2A_HOST` / `CREDIT_LOOKUP_A2A_PORT` | `0.0.0.0` / `8002` | Credit Lookup agent server bind address |
+| Loan Calculator | `LOAN_CALC_A2A_HOST` / `LOAN_CALC_A2A_PORT` | `0.0.0.0` / `8003` | Loan Calculator agent server bind address |
 
 ## Running the project
 
@@ -280,14 +300,18 @@ python -m tools.ragTool.a2a.a2a_server
 cd src
 python -m tools.creditLookupTool.a2a.a2a_server
 
-# Terminal 3 — Orchestrator (REPL); --role sales (default) or credit
+# Terminal 3 — Loan Calculator agent (http://0.0.0.0:8003)
+cd src
+python -m tools.loanCalcTool.a2a.a2a_server
+
+# Terminal 4 — Orchestrator (REPL); --role sales (default) or credit
 cd src
 python main.py --user wang01 --role sales
 ```
 
 Type `bye` in the orchestrator REPL to exit (you'll be asked whether to save a summarized memory of the session).
 
-Instead of the REPL in terminal 3, you can use the browser interface: run `python -m web.server` from `src/` and open http://localhost:8080 (see [Web interface](#web-interface)).
+Instead of the REPL in terminal 4, you can use the browser interface: run `python -m web.server` from `src/` and open http://localhost:8080 (see [Web interface](#web-interface)).
 
 Want to change a model, a port, or a GPU memory budget first? See [Configuration](#configuration) above.
 
@@ -324,7 +348,7 @@ Any agent can generate text through Google's Gemini API instead of the local vLL
 
 **Modes** (set `LLM_PROVIDER` in each agent's own `.env`):
 
-| Mode | Orchestrator | RAG | Credit Lookup | Local VRAM |
+| Mode | Orchestrator | RAG | Credit Lookup / Loan Calculator | Local VRAM |
 |---|---|---|---|---|
 | All-Gemini | gemini | gemini | gemini | ~2.7 GiB (RAG models on CUDA), or 0 with `RAG_EMBED_DEVICE=cpu`. No `llm.serve` needed |
 | Hybrid | gemini | vllm | gemini | the vLLM server plus RAG models |
@@ -332,7 +356,7 @@ Any agent can generate text through Google's Gemini API instead of the local vLL
 
 **Setup:**
 1. Create an API key at [aistudio.google.com](https://aistudio.google.com) → *Get API key*. Current keys start with `AQ.`.
-2. In each agent's `.env` that should use Gemini (`src/orchestrator/.env`, `src/tools/ragTool/.env`, `src/tools/creditLookupTool/.env`), add:
+2. In each agent's `.env` that should use Gemini (`src/orchestrator/.env`, `src/tools/ragTool/.env`, `src/tools/creditLookupTool/.env`, `src/tools/loanCalcTool/.env`), add:
    ```
    LLM_PROVIDER=gemini
    GEMINI_API_KEY=AQ...

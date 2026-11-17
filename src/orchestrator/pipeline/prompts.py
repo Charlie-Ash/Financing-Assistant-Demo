@@ -16,7 +16,7 @@ ASSISTANT_NAME = "融資業務助理"
 IDENTITY = f"你是「{ASSISTANT_NAME}」，一套供汽車融資公司業務與授信人員內部使用的多代理助理系統。"
 
 # How each route is presented to users when the assistant describes itself.
-CAPABILITY_LABELS = {"rag": "法規與內規查詢", "credit_lookup": "客戶往來查詢"}
+CAPABILITY_LABELS = {"rag": "法規與內規查詢", "credit_lookup": "客戶往來查詢", "loan_calc": "貸款試算"}
 
 ROLE_VIEWS = {
     "sales": "業務：可查看客戶基本資料、合約與繳款狀態，以及近12個月是否有逾期紀錄（僅有／無）；"

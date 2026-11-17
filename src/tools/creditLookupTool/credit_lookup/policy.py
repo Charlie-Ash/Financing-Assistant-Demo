@@ -9,6 +9,15 @@
 # show the first character and the last three digits.
 from datetime import date
 
+from finance.loan_calc import (
+    PREPAYMENT_FEE_SOURCE,
+    months_between,
+    payoff_quote,
+    prepayment_fee_rate,
+    remaining_balance,
+)
+from finance.plans import product_method
+
 ROLES = {"sales": "業務", "credit": "授信"}
 
 DISCLAIMER = "本摘要僅供參考，不構成授信核准或拒絕之決定，相關決定應由權責人員依授信準則判斷。"
@@ -58,10 +67,38 @@ def compute_late_facts(payments: list[dict], as_of: date) -> dict:
     }
 
 
-def build_view(customer: dict, contracts: list[dict], payments: list[dict], as_of: date, role: str, months: int) -> dict:
+def build_payoff(contract: dict, as_of: date, role: str) -> dict:
+
+    """提前清償試算 for one active contract, computed by finance/loan_calc.py.
+    Credit staff get the amounts; sales staff only the fee tier that applies,
+    since the amounts reveal the balance (credit-only)."""
+
+    months = months_between(date.fromisoformat(contract["start_date"]), as_of)
+    item = {"contract_id": contract["contract_id"], "months_since_start": months, "fee_rate": prepayment_fee_rate(months)}
+
+    if role == "credit":
+        remaining = remaining_balance(
+            contract["principal"], contract["annual_rate"], contract["term_months"], contract["due_periods"],
+            product_method(contract["product"]), contract["residual_value"],
+        )
+        quote = payoff_quote(remaining, contract["overdue_amount"], months)
+        parts = {
+            "remaining_principal": round(quote.remaining_principal),
+            "overdue_amount": round(quote.overdue_amount),
+            "fee": round(quote.fee),
+        }
+        # The total is the sum of the displayed (rounded) parts, so the line
+        # always adds up on screen.
+        item.update(parts, total=sum(parts.values()))
+    return item
+
+
+def build_view(customer: dict, contracts: list[dict], payments: list[dict], as_of: date, role: str, months: int,
+               include_payoff: bool = False) -> dict:
 
     """The role-filtered, masked record -- the only customer data that ever
-    leaves this module (to the LLM prompt, the reply and the audit log)."""
+    leaves this module (to the LLM prompt, the reply and the audit log).
+    include_payoff adds a 提前清償試算 per active contract (see build_payoff)."""
 
     late = compute_late_facts(payments, as_of)
     view = {
@@ -100,6 +137,9 @@ def build_view(customer: dict, contracts: list[dict], payments: list[dict], as_o
         # Sales staff get one yes/no flag -- no counts, dates or amounts.
         view["late"] = {"has_late_record": late["late_count"] > 0 or late["currently_overdue"]}
 
+    if include_payoff:
+        view["payoff"] = [build_payoff(c, as_of, role) for c in contracts if c["status"] != "已結清"]
+
     return view
 
 
@@ -135,6 +175,23 @@ def render_facts(view: dict) -> str:
             state = "已繳" if p["paid"] else "未繳"
             lines.append(f"  - {p['contract_id']} 第{p['period']}期（應繳日 {p['due_date']}）逾期 {p['days_late']} 天，{state}")
         lines.append(f"- 內部註記：{customer.get('risk_note') or '無'}")
+
+    if "payoff" in view:
+        lines.append(f"【提前清償試算】（依{PREPAYMENT_FEE_SOURCE}）")
+        for p in view["payoff"]:
+            tier = f"合約已滿 {p['months_since_start']} 個月，提前清償違約金費率 {p['fee_rate']:.0%}"
+            if "total" in p:
+                lines.append(f"- {p['contract_id']}：{tier}")
+                lines.append(
+                    f"  未到期本金 NT${p['remaining_principal']:,} ＋ 逾期未繳 NT${p['overdue_amount']:,} "
+                    f"＋ 違約金 NT${p['fee']:,} ＝ 預估應付 NT${p['total']:,}"
+                )
+            else:
+                lines.append(f"- {p['contract_id']}：{tier}；實際應付金額請洽授信人員。")
+        if not view["payoff"]:
+            lines.append("- 無進行中的合約")
+        elif any("total" in p for p in view["payoff"]):
+            lines.append("- 註：未含遲延利息，實際金額以授信部門結算為準。")
 
     return "\n".join(lines)
 
